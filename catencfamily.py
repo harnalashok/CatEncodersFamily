@@ -1,4 +1,4 @@
-# 31st May, 2023
+# 3rd June, 2023
 """
 References:
 Coding standard:
@@ -309,13 +309,29 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         # Check cat_cols names. These must not contain
         # any char other than a-zA-Z and _. Else, exception 
         # is raised
+        # https://stackoverflow.com/a/3301453
+        a = [ i for i in self.cat_cols if ' ' in i ]
+        if (len(a) > 0) :
+            raise Exception(f"Column names have spaces {a}. Remove spaces first.")
+        
+        a = [ i  for i in self.cat_cols if bool(re.search(r'\d', i))] 
+        if (len(a) > 0) :
+            raise Exception(f"Column names have digits; {a}. Rename cols to remove digits.")
+
         # https://stackoverflow.com/a/336220/3282777
-        a = [not re.search("^[a-zA-Z_]+$", i)  for i in self.cat_cols]
-        if (sum(a) > 0) :
-            raise Exception("Column names in cat_cols/data must be alphabets and may have underscore. No other char or digit etc allowed")
+        a = [ i for i in self.cat_cols       if not bool(re.search("^[a-zA-Z_]+$", i)) ]
+        if (len(a) > 0) :
+            raise Exception(f"Col names in cat_cols/data may only have alphabets/underscore: {a}. Rename cols appropriately.")
 
         msg = "No of interactingCatCols can not exceed cat_cols"
         assert (len(self.interactingCatCols) < len(self.cat_cols)) or (len(self.interactingCatCols) == len(self.cat_cols)), msg 
+        
+        if (len(self.interactingCatCols) > 0):
+            a = [ i for i in self.interactingCatCols if i not in self.cat_cols]
+            if len(a) > 0:
+                raise Exception("interactingCatCols can not have any col not included in cat_col.")
+                
+        
         assert self.noOfColsToConcat == 2,"In this ver noOfColsToConcat can only be 2"
         assert self.sampsize < 1, "sampsize be < 1. Ignored when n_iter is 1"
         assert self.verbose > 0, "verbose should minimum 1"
