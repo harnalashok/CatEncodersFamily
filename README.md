@@ -8,4 +8,6 @@ Use as: <br>
 <code>
 from catencfamily.encoders import CatEncodersFamily
 from catencfamily import utils
-</code>
+</code><br>
+
+pypi page is [here](https://pypi.org/project/catencfamily)
