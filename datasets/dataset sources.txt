@@ -1,0 +1,18 @@
+Dataset Sources:
+---------------
+
+Breast Cancer data:
+------------------
+UCI:
+https://archive.ics.uci.edu/ml/datasets/breast+cancer+wisconsin+(diagnostic)
+
+Kidney stone data:
+------------------
+Kaggle:
+https://www.kaggle.com/datasets/vuppalaadithyasairam/kidney-stone-prediction-based-on-urine-analysis
+
+Diabetes dataset:
+-------------------
+Kaggle:
+https://www.kaggle.com/datasets/mathchi/diabetes-data-set
+
