@@ -6,17 +6,12 @@ A. Breast Cancer data:
 UCI:
 https://archive.ics.uci.edu/ml/datasets/breast+cancer+wisconsin+(diagnostic)
 
-B. Kidney stone data:
-------------------
-Kaggle:
-https://www.kaggle.com/datasets/vuppalaadithyasairam/kidney-stone-prediction-based-on-urine-analysis
-
-C. Diabetes dataset:
+B. Diabetes dataset:
 -------------------
 Kaggle:
 https://www.kaggle.com/datasets/mathchi/diabetes-data-set
 
-D. Pulsar dataset:
+C. Pulsar dataset:
 ------------------
 Kaggle:
 https://www.kaggle.com/datasets/colearninglounge/predicting-pulsar-starintermediate
