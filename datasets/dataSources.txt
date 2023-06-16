@@ -16,3 +16,11 @@ C. Pulsar dataset:
 Kaggle:
 https://www.kaggle.com/datasets/colearninglounge/predicting-pulsar-starintermediate
 
+
+D. Amazon dataset
+-----------------
+Kaggle:
+https://www.kaggle.com/datasets/lucamassaron/amazon-employee-access-challenge
+
+
+
