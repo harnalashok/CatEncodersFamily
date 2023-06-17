@@ -1,4 +1,4 @@
-# 3rd June, 2023
+# 17th June, 2023
 
 ## Utility functions
 
@@ -9,10 +9,15 @@ from scipy.stats import kurtosis
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.datasets import make_classification
+from sklearn.feature_selection import  mutual_info_classif
+import networkx as nx
+import itertools
 import pickle
 import pathlib
 import string
 import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
 
 
 
@@ -36,6 +41,7 @@ def xgImptFeatures(model, df_columns, filename = None, master=None):
     -------
     fe_1 : List of columns having features imp > 0 in descending order
     fe_0 : List of columns having features imp of 0.0
+    fe   : Pandas Series with indicies as col names against imp scores 
     """
     # Sorted index are in descending order of impt
     sorted_idx = model.feature_importances_.argsort()[::-1]
@@ -56,9 +62,52 @@ def xgImptFeatures(model, df_columns, filename = None, master=None):
         filename = pathlib.Path(master) / filename
         with open(filename,'w') as tfile:
             tfile.write('\n'.join(fe_1))
-    return fe_1, fe_0
+    return fe_1, fe_0, fe
    
 
+# Ref: https://www.kaggle.com/code/tetsutani/ps3e16-eda-ensemble-ml-pipeline
+# For multiple models
+def visualize_importance(models, feature_cols, title, top=9):
+    """
+    Not tested
+    
+    Parameters
+    ----------
+    models : TYPE
+        DESCRIPTION.
+    feature_cols : TYPE
+        DESCRIPTION.
+    title : TYPE
+        DESCRIPTION.
+    top : TYPE, optional
+        DESCRIPTION. The default is 9.
+
+    Returns
+    -------
+    None.
+
+    """
+    importances = []
+    feature_importance = pd.DataFrame()
+    for i, model in enumerate(models):
+        _df = pd.DataFrame()
+        _df["importance"] = model.feature_importances_
+        _df["feature"] = pd.Series(feature_cols)
+        _df["fold"] = i
+        _df = _df.sort_values('importance', ascending=False)
+        _df = _df.head(top)
+        feature_importance = pd.concat([feature_importance, _df], axis=0, ignore_index=True)
+        
+    feature_importance = feature_importance.sort_values('importance', ascending=False)
+    # display(feature_importance.groupby(["feature"]).mean().reset_index().drop('fold', axis=1))
+    plt.figure(figsize=(12, 4))
+    sns.barplot(x='importance', y='feature', data=feature_importance, color='skyblue', errorbar='sd')
+    plt.xlabel('Importance', fontsize=14)
+    plt.ylabel('Feature', fontsize=14)
+    plt.title(f'{title} Feature Importance', fontsize=18)
+    plt.grid(True, axis='x')
+    plt.show()
+    
 
 
 # https://stackoverflow.com/a/44674459
@@ -114,8 +163,13 @@ def addStatsCols(df):
 
 
 # Generate data using sklearn's make_classification
-def generateSklearnData(X,y, test_size = 0.25, bins = 20, genColName = True):
+def transformToCatFeatures(X,y, test_size = 0.25, bins = 20, genColName = True):
     """
+    Calls: transformFeatures()
+    Called by: main()
+    
+    Desc
+    ----
     The function discretises X assuming all features in X
     have continuous values. Discretisation of all features 
     is perfomed as per number of 'bins' specified. 
@@ -148,7 +202,7 @@ def generateSklearnData(X,y, test_size = 0.25, bins = 20, genColName = True):
     y_data = np.array(y)
     colnames = list(X.columns)
     
-    orig_train, orig_test,train_binned,test_binned = transformToCatFeatures(X_data,y_data, test_size, bins, colnames, genColName)
+    orig_train, orig_test,train_binned,test_binned = transformFeatures(X_data,y_data, test_size, bins, colnames, genColName)
     return orig_train, orig_test, train_binned, test_binned    
 
 
@@ -206,14 +260,20 @@ def generateClassificationData(n_samples = 10000, n_features = 10, n_informative
     X_data = np.array(X)
     y_data = np.array(y)
     
-    orig_train, orig_test,train_binned,test_binned = transformToCatFeatures(X_data,y_data, test_size, bins, genColName)
+    orig_train, orig_test,train_binned,test_binned = transformFeatures(X_data,y_data, test_size, bins, genColName)
     return orig_train, orig_test, train_binned, test_binned    
 
 
+
  
-def transformToCatFeatures(X_data,y_data, test_size = 0.25, bins= 20,  colnames = None, genColName = True):
+def transformFeatures(X_data,y_data, test_size = 0.25, bins= 20,  colnames = None, genColName = True):
     
     """
+    Called by: transformToCatFeatures() , generateClassificationData
+    Calls: None
+    
+    Desc
+    ----
     Given a DataFrame X_data having only continuous features, 
     and y_data the target, the function bins each feature. 
     The resulting dataframe as also the original is partitioned
@@ -481,6 +541,7 @@ def savePythonObject(pythonObject, filename, filePath = None ):
         path = pathlib.Path(filePath) / filename
     with open(path, 'wb') as outp:
         pickle.dump(pythonObject, outp, pickle.HIGHEST_PROTOCOL)
+    print("Object saved to:", str(path))    
 
      
      
@@ -506,6 +567,7 @@ def restorePythonObject(filename, filePath = None):
      if filePath is None:
         filePath = pathlib.Path.cwd()
         path = filePath / filename
+        print(f"Looking for '{filename}' in folder: {str(filePath)}" )
      else:
         path = pathlib.Path(filePath) / filename
 
@@ -596,7 +658,603 @@ def pcaAndConcat(vec_train, vec_test, n_components = 2, scaleData = True):
 
 
 
-############################ BEGIN ###################
+# Ref: https://www.kaggle.com/code/ryanholbrook/mutual-information
+def calMIScores(X, y):
+    """
+    Desc
+    ---- 
+    Calculates mutual information scores when target
+    is discrete.
+
+    Parameters
+    ----------
+    X : Pandas DataFrame 
+    y : An array or Series; target
+
+    Returns
+    -------
+    mi_scores : Pandas Series (sorted)
+
+    """
+    
+    # Get sores
+    mi_scores = mutual_info_classif(X, y)
+    # Transform mi_scores to a Series:
+    mi_scores = pd.Series(mi_scores, name="MI Scores", index=X.columns)
+    # Sort Series in Descending order:
+    mi_scores = mi_scores.sort_values(ascending=False)
+    return mi_scores
+
+
+
+def plotSeries(scores, title= ""):
+    """
+    Desc
+    ----
+    Plots MI scores or feature impt by centrality 
+    calculated by calMIScores() or by featureImptByCentrality()
+    Use it as:
+        plt.figure(dpi=100, figsize=(8, 5))
+        plotSeries(calMIScores(X, y), someTitle)
+        OR, as
+        plotSeries(featureImptByCentrality, someTitle)
+        
+    Parameters
+    ----------
+    scores: Pandas Series
+    title: Graph title; default: Empty str
+    
+    """
+    # Scores sorted in ascending order:
+    scores = scores.sort_values(ascending=True)
+    # Map parameters:
+    width = np.arange(len(scores))
+    # Write ticks as per scores index:
+    ticks = list(scores.index)
+    # Plot width:
+    plt.barh(width, scores)
+    # Plot yticks
+    plt.yticks(width, ticks)
+    plt.title(title)
+    
+    
+
+def featureImptByCentFeatCounts(colList, normalize = False):
+    """
+    Desc
+    ----
+    In the colList, how many columns pertain to
+    degree centrality, eigenvector centrality,
+    page-rank and clustering coeff. Plot
+    by using plotSeries().
+    
+    Example:
+        Here is a table of col-name wise xgboost impt score
+        
+        deg_abc   0.01
+        pr_cde    0.02
+        pr_def    0.015
+        eig_xy    0.11
+        deg_ff    0.001
+        deg_uy    0.01
+        
+    Result (normalized):
+        
+        degree      3/6
+        pagerank    2/6
+        eigenvector 1/6
+
+    Parameters
+    ----------
+    colList : A list of columns
+    normalize: Boolean
+
+    Returns
+    -------
+    d : A sorted pandas Series
+
+    """
+    d = {'degree' : 0, 'pagerank' : 0, 'eigenvector' : 0, 'clusteringcoeff' : 0,
+         "betweenness" : 0, 'avgembeddedness' : 0, 'leidencomsdensity' : 0}
+    deg = [i for i in colList if 'deg_' in i ]
+    d['degree'] = len(deg)
+    pr =  [i for i in colList if 'pr_' in i ]
+    d['pagerank'] = len(pr)       
+    eig = [i for i in colList if 'eig_' in i ] 
+    d['eigenvector'] = len(eig)      
+    clu = [i for i in colList if 'clu_' in i ]
+    d['clusteringcoeff'] = len(clu)
+    bet = [i for i in colList if 'bet_' in i ]
+    d['betweenness'] = len(bet)
+    ae = [i for i in colList if 'ae_' in i ]
+    d['avgembeddedness'] = len(ae)
+    den = [i for i in colList if 'den_' in i ]
+    d['leidencomsdensity'] = len(den)
+    # Transform d to pandas Series:
+    d = pd.Series(d).sort_values(ascending = False)
+    if (normalize):
+        d = d/sum(d)
+    return d
+
+
+
+def featureImptByScore(score, colList, normalize = False):
+    """
+    Desc
+    ----
+    In the colList, total score of columns
+    that pertain to degree centrality, to eigenvector
+    centrality, to page-rank and clustering coeff and 
+    others. Plot by using plotSeries().
+    
+    Example:
+        Here is a table of col-name wise xgboost impt score
+        
+        deg_abc   0.01
+        pr_cde    0.02
+        pr_def    0.015
+        eig_xy    0.11
+        deg_ff    0.001
+        
+    Result:
+        degree      0.011
+        pagerank    0.035
+        eigenvector 0.11
+
+    Parameters
+    ----------
+    score: Pandas Series giving column wise impt score
+    colList : A list of dataframe columns
+    normalize: Boolean
+
+    Returns
+    -------
+    d : A sorted pandas Series
+
+    """
+    d = {'degree' : 0, 'pagerank' : 0, 'eigenvector' : 0, 'clusteringcoeff' : 0,
+         "betweenness" : 0, 'avgembeddedness' : 0, 'leidencomsdensity' : 0}
+    deg = [i for i in colList if 'deg_' in i ]
+    d['degree'] = score[deg].sum()
+    pr =  [i for i in colList if 'pr_' in i ]
+    d['pagerank'] = score[pr].sum()      
+    eig = [i for i in colList if 'eig_' in i ] 
+    d['eigenvector'] = score[eig].sum()    
+    clu = [i for i in colList if 'clu_' in i ]
+    d['clusteringcoeff'] = score[clu].sum()
+    bet = [i for i in colList if 'bet_' in i ]
+    d['betweenness'] = score[bet].sum()
+    ae = [i for i in colList if 'ae_' in i ]
+    d['avgembeddedness'] = score[ae].sum()
+    den = [i for i in colList if 'den_' in i ]
+    d['leidencomsdensity'] = score[den].sum()
+    # Transform d to pandas Series:
+    d = pd.Series(d).sort_values(ascending = False)
+    if (normalize):
+        d = d/sum(d)
+    return d
+ 
+
+      
+       
+def plotBipartiteGraph(filename, pathToFolder, ax=None , title = None, connected = False):
+    """
+    Plots a bipartitie graph.  
+    
+    Parameters
+    ----------
+    filename : Filename
+    pathToFolder : Folder where file resides
+    ax: Matplotlib axis
+    connected: Boolean; Show only connected nodes
+               Default is False
+    Returns
+    -------
+    None.
+
+    """
+    filepath = pathToFolder / filename
+    G = nx.read_gml(filepath) 
+    if connected:
+      gcc = max(nx.connected_components(G), key=lambda x: len(x))
+      # subgraph of connected nodes:
+      H = G.subgraph(gcc)
+      GH = H
+    else:
+      GH = G  
+    color_dict = {0:'b',1:'r'}
+    color_list = [color_dict[i[1]] for i in GH.nodes.data('bipartite')]
+    color_list
+    pos = nx.spring_layout(GH, k = None, scale = 4, iterations = 1000)
+    #plt.figure(figsize= (10,5));
+    #ax = plt.gca();
+    nx.draw(GH, 
+            pos= pos,
+            node_size=30,
+            with_labels =  False,
+            font_size = 10,
+            node_color = color_list,
+            ax =ax,
+            width = 0.1  # edge width
+            );
+    
+    plt.title(title)
+
+
+
+def plotUnipartiteGraph(filename, pathToFolder, ax = None,title = None, connected=False):
+    """
+    Plots a unipartite graph
+    Parameters
+    ----------
+    filename : graph file.
+    pathToFolder : Path to folder of graph file.
+    Returns
+    -------
+    None.
+
+    """
+    filepath = pathToFolder / filename
+    G = nx.read_gml(filepath) 
+    if connected:
+        gcc = max(nx.connected_components(G), key=lambda x: len(x))
+        # subgraph of connected nodes:
+        H = G.subgraph(gcc)
+        GH = H
+    else:
+        GH = G
+    pos = nx.spring_layout(GH, k = None)
+    #plt.figure(figsize= (10,5));
+    #ax = plt.gca();
+    nx.draw(GH, 
+            pos= pos,
+            node_size=30,
+            with_labels =  False,
+            font_size = 10,
+            ax =ax,
+            width = 0.1  # edge width
+            );
+    plt.title(title)
+    
+
+    
+# Community visualization
+# Kaggle: https://www.kaggle.com/code/rahulgoel1106/commmunity-detection-using-igraph-and-networkx
+def communityVisualization(filename, pathToFolder, algo = nx.community.greedy_modularity_communities ,
+                           ax= None, title = None, withLabels = False, font_size = 8, edgewidth = 0.1,
+                           colorList =  ["orange","yellow","cyan","green","red", "purple"]):
+    """
+    Desc
+    ----
+    Displays communities created by given community algo.
+
+    Parameters
+    ----------
+    filename : str, Graph file
+    pathToFolder : str, Path to folder having graph files
+    algo: function object to create communities
+          Default: nx.community.greedy_modularity_communities 
+          Examples: nx.community.kernighan_lin_bisection
+                    nx.community.greedy_modularity_communities
+                    nx.community.louvain_communities
+    ax: Matplotlib axis object
+    withLabels : boolean, Should labels be displayed? The default is False.
+    font_size : int, Label font size. The default is 8.
+    edgewidth: float, Edge line width
+    colorList: List of colors for difft communitied. 
+               Default is: ["orange","yellow","cyan","green","red","purple"]
+
+    Returns
+    -------
+    None.
+
+    """
+    filepath = pathToFolder / filename
+    G = nx.read_gml(filepath) 
+    colors = colorList
+    pos = nx.spring_layout(G)
+    
+    if algo == nx.community.girvan_newman:
+        lst_b = algo(G)
+        lst_b = tuple(sorted(c) for c in next(lst_b))
+        lst_b = [frozenset(i) for i in lst_b ]
+    else:
+        lst_b = algo(G)
+
+    
+    color_map_b = {}
+    keys = G.nodes()
+    values = "black"
+    for i in keys:
+            color_map_b[i] = values
+    counter = 0
+    for x in lst_b:
+      for n in x:
+        color_map_b[n] = colorList[counter]
+      counter = counter + 1
+    nx.draw_networkx_edges(G, pos, width = edgewidth, ax =ax);
+    nx.draw_networkx_nodes(G, pos, node_color=dict(color_map_b).values(), ax =ax);
+    if withLabels:
+      nx.draw_networkx_labels(G, pos, font_size = font_size, font_weight = 'bold',ax =ax)
+    plt.axis("off");
+    plt.title(title)
+    #plt.show();    
+
+
+
+def transformBinnedDF2Communities(columnNames,pathToGraphFolder, train_binned, algo=nx.community.greedy_modularity_communities):
+    """
+    Desc
+    -----
+    Replace every column in the binned the Dataframe as per network community
+    Example binned/discrete dataframe:
+            'a'     'b
+            --      ---
+            434     709
+            435     789
+            23      710
+            78      756
+
+    Replace col 'a' as per communities discovered in network 'a_projected_b.gml':
+    434 & 435 belong to one community and 23 & 78 to other.    
+
+            'a'     'b'
+            ---     ---
+             0      709
+             0      789
+             1      710
+             1      756
+
+    Similarly, replace col 'b' as per communities in 'b_projected_a.gml':
+
+            'a'     'b'
+            ---     ---
+             0      1
+             0      0
+             1      0
+             1      1
+             
+    Parameters
+    -----------     
+    columnNames: list of cat cols
+    pathToGraphFolder: str: Folder that has graph files     
+    train_binned: DataFrame with binned/discrete columns  
+    algo: function object: networkx algorithm to be used to 
+          discover communities.
+          Examples: nx.community.kernighan_lin_bisection
+                    nx.community.greedy_modularity_communities
+                    nx.community.louvain_communities
+
+          
+    Returns
+    -------
+    map_list: list of dictionaries. Each dictionary maps
+              levels in a column to a community 
+    df: DataFrame: Transformed train_binned DataFrame.
+        If train_binned had columns other than columnNames,
+        df would not contain those columns          
+
+
+    """
+
+    # 1. From col-names names, create graph filenames:
+    # Example: col-names: ['a','b','c']
+    # First permute col-names in pairs of two:
+    #  p = ('a','b'),('b','a'), ('a','c'),('c','a')...
+    p = list(itertools.permutations(columnNames,2))
+    # Prepare list of graph files:
+    # ('a_projected_b.gml', 'b_projected_a.gml'...)
+    filelist = [] 
+    for i in p:
+      filelist.append(i[0] + "_projected_" + i[1] + ".gml")
+    
+    # Check if all files in filelist exist. Or which files exist?      
+    filesexist = []
+    for i in filelist:
+        myfile = Path(pathToGraphFolder) / i
+        if myfile.exists():
+            filesexist.append(i) 
+            
+    filelist = filesexist        
+
+    # 2. For every file in the filelist
+    map_list = []  # Start with a blank list of dictionaries
+    # df will store dataframe train_binned after each bin-col is mapped
+    #  
+    df = pd.DataFrame()
+    for file in filelist:
+      # 2.1 Load network
+      # Get full filename that includes filepath
+      filepath = Path(pathToGraphFolder) / file
+      # Read the file as a network
+      G = nx.read_gml(filepath)
+
+      # 2.2 Calculate community classes using algo
+      #    cm_mod contains as many frozensets of nodes
+      #    as there are communities:
+          
+      if algo == nx.community.girvan_newman:
+          cm_mod = algo(G)
+          cm_mod = tuple(sorted(c) for c in next(cm_mod))
+          cm_mod = [frozenset(i) for i in cm_mod ]
+      else:
+          cm_mod = algo(G)
+
+      # 3.0 We now create dict corresponding to
+      #     all communities in cm_mod
+      #    Example:
+      #                 frozenset1         frozenset2
+      #   cm_mod:     [{'434', '435' },    {'23' , '78'}]
+      #   fset_dict  {'434': 0, '435' :0, '23' : 1, '78': 1}
+
+      counter = 0  # Assigns values in dict
+      fset_dict = {}  # Start with blank dict
+      # For every frozenset
+      for i in cm_mod:
+        # If set i is not a frozenset, make it so
+        # else its members cannot be used as dict keys
+        if not isinstance(i,frozenset):
+            i = frozenset(i)
+            
+        # For every item in this frozenset
+        for g in i:
+          # Set class to the value of counter
+          fset_dict[g] = counter
+
+        # Increment counter for next class
+        counter  +=1
+      # Now that map dict for the modularity
+      # classes are ready, append it to map_list
+      map_list.append(fset_dict)
+
+      # Extract column name from file:
+      colToProject = file.split('_')[0]
+      # Map train_binned column using the dict
+      df[file] = train_binned[colToProject].map(fset_dict)
+      # Continue for loop for the next filelist
+    return map_list,df
+
+
+
+def transformBinnedDF2CommunitiesAll(pathToGraphFolder, train_binned, algo):
+    """
+    Desc
+    -----
+    Search out all graph files and Replace every column in the binned Dataframe 
+    as per network community
+    Example binned/discrete dataframe:
+            'a'     'b
+            --      ---
+            434     709
+            435     789
+            23      710
+            78      756
+
+    Replace col 'a' as per communities discovered in network 'a_projected_b.gml':
+    434 & 435 belong to one community and 23 & 78 to other.
+
+            'a'     'b'
+            ---     ---
+             0      709
+             0      789
+             1      710
+             1      756
+
+    Similarly, replace col 'b' as per communities in 'b_projected_a.gml':
+
+            'a'     'b'
+            ---     ---
+             0      1
+             0      0
+             1      0
+             1      1
+
+    Parameters
+    -----------
+    pathToGraphFolder: str: Folder that has graph files
+    train_binned: DataFrame with binned/discrete columns
+    algo: function object: networkx algorithm to be used to
+          discover communities.
+          Example: nx.community.greedy_modularity_communities
+
+    Returns
+    -------
+    map_list: list of dictionaries. Each dictionary maps
+              levels in a column to a community
+    df: DataFrame: Transformed train_binned DataFrame.
+        If train_binned had columns other than columnNames,
+        df would not contain those columns
+
+
+    """
+    # 15.1 Path where .gml files are placed:
+
+    # 1. From col-names names, create graph filenames:
+    filelist = sorted(list(Path(pathToGraphFolder).iterdir()))
+    filelist = [i   for i in filelist if "_projected_" in str(i) ]
+    filelist = [str(i).split("/")[-1]   for i in filelist ]
+
+    # 2. For every file in the filelist
+    map_list = []  # Start with a blank list of dictionaries
+    # df will store dataframe train_binned after each bin-col is mapped
+    #
+    df = pd.DataFrame()
+    for file in filelist:
+      # 2.1 Load network
+      # Get full filename that includes filepath
+      filepath = Path(pathToGraphFolder) / file
+      # Read the file as a network
+      G = nx.read_gml(filepath)
+
+      # 2.2 Calculate community classes using algo
+      #    cm_mod contains as many frozensets of nodes
+      #    as there are communities:
+          
+      if algo == nx.community.girvan_newman:
+          cm_mod = algo(G)
+          cm_mod = tuple(sorted(c) for c in next(cm_mod))
+          cm_mod = [frozenset(i) for i in cm_mod ]
+      else:
+          cm_mod = algo(G)
+
+      # 3.0 We now create dict corresponding to
+      #     all communities in cm_mod
+      #    Example:
+      #                 frozenset1         frozenset2
+      #   cm_mod:     [ {'434', '435' },    {'23' , '78'}]
+      #   fset_dict  {'434': 0, '435' :0, '23' : 1, '78': 1}
+
+      counter = 0  # Assigns values in dict
+      fset_dict = {}  # Start with blank dict
+      # For every frozenset
+      for i in cm_mod:
+        if not isinstance(i,frozenset):
+          i = frozenset(i)
+        # For every item in this frozenset
+        for g in i:
+          # Set class to the value of counter
+          fset_dict[g] = counter
+
+        # Increment counter for next class
+        counter  +=1
+      # Now that map dict for the modularity
+      # classes are ready, append it to map_list
+      map_list.append(fset_dict)
+
+      # Extract column name from file:
+      colToProject = file.split('_projected_')[0]
+      # Map train_binned column using the dict
+      if colToProject in train_binned.columns:
+        df[file] = train_binned[colToProject].map(fset_dict)
+      # Continue for loop for the next filelist
+    return map_list,df
+    
+
+
+# Function to remove const columns from DataFrame
+# https://stackoverflow.com/a/20210048
+def remConstColumns(df):
+    """
+    Desc
+    ----
+    Removes const columns from dataframe df
+
+    Parameters
+    ----------
+    df : pandas DataFrame
+
+    Returns
+    -------
+    df : pandas DataFrame
+
+    """
+    print(f"Datashape before processing: {df.shape}")
+    df = df.loc[:, (df != df.iloc[0]).any()] 
+    print(f"Datashape after processing: {df.shape}")
+    return df
+
+
+################### That's all folks #######################
 
 
 

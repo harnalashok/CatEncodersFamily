@@ -1,4 +1,4 @@
-# 3rd June, 2023
+# 04th June, 2023
 """
 References:
 Coding standard:
@@ -11,8 +11,6 @@ Project template:
     https://github.com/scikit-learn-contrib/project-template/    
     
 """
-
-
 
 # 1.0 Libraries
 import pandas as pd
@@ -221,7 +219,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             
         if (self.n_iter > 1 and self.sampsize < 1):
             if not isinstance(y, pd.Series):
-                raise ValueError("Pass y as a pandas.Series") 
+                raise ValueError("When n_iter > 1,'target' must be passed in fit().") 
                 
         if self.pathToStoreProgress is None:
             # Create two folders: 
@@ -714,15 +712,15 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         noOfUniqueValues = train[colToProject].nunique()
         print("No of unique values in ", colToProject, " are: ", noOfUniqueValues)
         model = self._learn(train,colToProject, intermediaryCol)
-        if self.modelsPath is not None:
-            # Store models to disk in a separate folder.
-            #  Folder must alreday exist
-            # storeModel(train,model, pathToStore)
-            # cMeasures: Centrality measures [1,1,1]
-            self._storeModel(model)
-            if (self.cMeasures[6] == 1):
-                self._storeModelComm(model)
-            print("Model saved")
+        #if self.modelsPath is not None:
+        # Store models to disk in a separate folder.
+        #  Folder must alreday exist
+        # storeModel(train,model, pathToStore)
+        # cMeasures: Centrality measures [1,1,1]
+        self._storeModel(model)
+        if (self.cMeasures[6] == 1):
+            self._storeModelComm(model)
+        print("Model saved")
         return    
     
     
@@ -833,12 +831,17 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                 # No need to save anything
                 continue
     
-            # Merge left dataframe with current model
-            #  (i+1) becuase modelName starts with modelName1
-            current_model = "modelName" + str(i+1)
-            filename =  myvar[current_model] + ".pkl"
-            path = Path(self.modelsPath)
-            my_file = path / filename
+            # An arbitrary file that we do not expect to exist
+            my_file = Path(str(np.random.randint(30000,40000)))
+
+            if (self.modelsPath is not None):
+                # Merge left dataframe with current model
+                #  (i+1) becuase modelName starts with modelName1
+                current_model = "modelName" + str(i+1)
+                filename =  myvar[current_model] + ".pkl"
+                path = Path(self.modelsPath)
+                my_file = path / filename
+
             
             # If the model file was earlier saved and it exists
             if my_file.exists():   
@@ -914,10 +917,16 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             
             for i,j in enumerate((ae,den)):    # Instead of ((gr,ae,den))
                 ldf = j
-                current_model = "modelName" + str(7 + i)
-                filename =  myvar[current_model] + ".pkl"
-                path = Path(self.modelsPath)
-                my_file = path / filename
+                
+                # An arbitrary file that we do not expect to exist
+                my_file = Path(str(np.random.randint(30000,40000)))
+                if (self.modelsPath is not None):
+                    current_model = "modelName" + str(7 + i)
+                    filename =  myvar[current_model] + ".pkl"
+                    path = Path(self.modelsPath)
+                    my_file = path / filename
+                
+                
                 if my_file.exists():   
                         # Read earlier the saved file
                         saved_file = pd.read_pickle(my_file)
@@ -2065,51 +2074,5 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                 nx.draw_networkx(G,pos = pos, node_size=30, with_labels =  withLabels, font_size=fontSize, node_color = 'r', ax =ax)
         return
     
-                
+ ###############333##################               
        
-
-
-############################
-# https://stackoverflow.com/a/60186800/3282777
-class FeatureTransformer:
-    
-    def __init__(self, categorical_features):
-        self.categorical_features = categorical_features
-        
-    def fit(self, X):
-
-        if not isinstance(X, pd.DataFrame):
-            raise ValueError("Pass a pandas.DataFrame")
-            
-        if not isinstance(self.categorical_features, list):
-            raise ValueError(
-                "Pass categorical_features as a list of column names")
-                    
-        self.encoding = {}
-        for c in self.categorical_features:
-
-            _, int_id = X[c].factorize()
-            self.encoding[c] = dict(zip(list(int_id), range(1,len(int_id)+1)))
-            
-        return self
-
-    def transform(self, X, onehot=True):
-
-        if not isinstance(X, pd.DataFrame):
-            raise ValueError("Pass a pandas.DataFrame")
-
-        if not hasattr(self, 'encoding'):
-            raise AttributeError("FeatureTransformer must be fitted")
-            
-        df = X.drop(self.categorical_features, axis=1)
-        
-        if onehot:  # one-hot encoding
-            for c in sorted(self.categorical_features):            
-                categories = X[c].map(self.encoding[c]).values
-                for val in self.encoding[c].values():
-                    df["{}_{}".format(c,val)] = (categories == val).astype('int16')
-        else:       # label encoding
-            for c in sorted(self.categorical_features):
-                df[c] = X[c].map(self.encoding[c]).fillna(0)
-            
-        return df
