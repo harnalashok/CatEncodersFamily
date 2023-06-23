@@ -1,4 +1,4 @@
-# 17th June, 2023
+# 23th June, 2023
 
 ## Utility functions
 
@@ -18,6 +18,7 @@ import string
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
+
 
 
 
@@ -523,24 +524,46 @@ def bootstrapSample(df)    :
 def savePythonObject(pythonObject, filename, filePath = None ):
     
     """
+    Desc
+    ----
     Saves any python object to disk
-    File is saved to filePath. Restore it
+    File is saved to filePath. If
+    filePath does not exist, it is
+    created.
+    Restore the pythonObject
     using restorePythonObject()
+    
     Parameters
     ----------
-    filename : pickle file for dumping
+    pythonObject: Obj to be saved
+    filename : str Name of pickle file
+    filePath: str, NAme of folder
+    
     Returns
     -------
     None.
     """
+    
     # Current dir is the default filePath
     if filePath is None:
         filePath = pathlib.Path.cwd()
         path = filePath / filename
     else:
         path = pathlib.Path(filePath) / filename
+        
+    # Check if specified folder exixts:
+    # IF not create one:
+    p = pathlib.Path(filePath)
+    if not pathlib.Path.exists(p):
+        print(f"Folder '{filePath}' does not exist")
+        print("Being created..")
+        p.mkdir(parents=True, exist_ok=True)    
+    
+    # Now dump the python object    
     with open(path, 'wb') as outp:
         pickle.dump(pythonObject, outp, pickle.HIGHEST_PROTOCOL)
+        
+    # Finally print your message    
     print("Object saved to:", str(path))    
 
      
@@ -589,16 +612,26 @@ def pcaAndConcat(vec_train, vec_test, n_components = 2, scaleData = True):
     on each dataframe and outputs a concatenated dataframe. 
     This it does for both the dictionaries and outputs two dataframes. 
     
+    Example: 
+        Assume our training data has 5-cat columns. Corresponding
+        to every col the input dict will have 5-dataframes of 
+        unit vectors. No of rows in each dataFrame would be the same
+        that is as many as in train/test data. 
+        Take PCA of each dataframe and reduce the unit vectors to
+        2-cols. Thus, we will have 10 columns in all. Concatenate
+        these 10 columns to make our revised training/test data.
+    
     Parameters
     ----------
     
     vec_train: Dictionary of Dataframes. It would contain unit vectors
-               for each cat col of train data.
+               per-level per-row for each cat col of train data.
                
     vec_test:  Dictionary of Dataframes. It would contain unit vectors
                for each cat col of test data.         
                
-    n_components: No of PCA components. Default is 2.
+    n_components: int, No of PCA components to reduce each DataFrame to.
+                  Default is 2.
     scaleData: boolean; Should data be centered and scaled before PCA?
                Default is True.
     
@@ -837,7 +870,7 @@ def featureImptByScore(score, colList, normalize = False):
 
       
        
-def plotBipartiteGraph(filename, pathToFolder, ax=None , title = None, connected = False):
+def plotBipartiteGraph(filename, pathToFolder, ax=None , title = None, node_size = 30, connected = False, takeGraphSample = False, noSampleNodes=100):
     """
     Plots a bipartitie graph.  
     
@@ -848,6 +881,9 @@ def plotBipartiteGraph(filename, pathToFolder, ax=None , title = None, connected
     ax: Matplotlib axis
     connected: Boolean; Show only connected nodes
                Default is False
+    takeGraphSample: boolean; Take a sample of graph for plotting
+    noSampleNodes: int; No of nodes to be taken if takeGraphSample is True 
+          
     Returns
     -------
     None.
@@ -855,6 +891,12 @@ def plotBipartiteGraph(filename, pathToFolder, ax=None , title = None, connected
     """
     filepath = pathToFolder / filename
     G = nx.read_gml(filepath) 
+    
+    # Ref: https://stackoverflow.com/a/62407941/3282777
+    if takeGraphSample:
+        sampled_nodes = np.random.choice(G.nodes, noSampleNodes)
+        G = G.subgraph(sampled_nodes)
+    
     if connected:
       gcc = max(nx.connected_components(G), key=lambda x: len(x))
       # subgraph of connected nodes:
@@ -862,6 +904,7 @@ def plotBipartiteGraph(filename, pathToFolder, ax=None , title = None, connected
       GH = H
     else:
       GH = G  
+      
     color_dict = {0:'b',1:'r'}
     color_list = [color_dict[i[1]] for i in GH.nodes.data('bipartite')]
     color_list
@@ -870,7 +913,7 @@ def plotBipartiteGraph(filename, pathToFolder, ax=None , title = None, connected
     #ax = plt.gca();
     nx.draw(GH, 
             pos= pos,
-            node_size=30,
+            node_size= node_size,
             with_labels =  False,
             font_size = 10,
             node_color = color_list,
@@ -878,17 +921,22 @@ def plotBipartiteGraph(filename, pathToFolder, ax=None , title = None, connected
             width = 0.1  # edge width
             );
     
-    plt.title(title)
+    fontx = {'color':'green','size':8}
+    plt.title(title, fontdict = fontx);
 
 
 
-def plotUnipartiteGraph(filename, pathToFolder, ax = None,title = None, connected=False):
+
+def plotUnipartiteGraph(filename, pathToFolder, ax = None,title = None, node_size = 30, connected=False, takeGraphSample = False, noSampleNodes=100):
     """
     Plots a unipartite graph
     Parameters
     ----------
     filename : graph file.
     pathToFolder : Path to folder of graph file.
+    takeGraphSample: boolean; Take a sample of graph for plotting
+    noSampleNodes: int; No of nodes to be taken if takeGraphSample is True 
+
     Returns
     -------
     None.
@@ -896,6 +944,13 @@ def plotUnipartiteGraph(filename, pathToFolder, ax = None,title = None, connecte
     """
     filepath = pathToFolder / filename
     G = nx.read_gml(filepath) 
+    
+    # If network is very large, take a sanple
+    # Ref: https://stackoverflow.com/a/62407941/3282777
+    if takeGraphSample:
+        sampled_nodes = np.random.choice(G.nodes, noSampleNodes)
+        G = G.subgraph(sampled_nodes)
+    
     if connected:
         gcc = max(nx.connected_components(G), key=lambda x: len(x))
         # subgraph of connected nodes:
@@ -908,21 +963,24 @@ def plotUnipartiteGraph(filename, pathToFolder, ax = None,title = None, connecte
     #ax = plt.gca();
     nx.draw(GH, 
             pos= pos,
-            node_size=30,
+            node_size = node_size,
             with_labels =  False,
             font_size = 10,
             ax =ax,
             width = 0.1  # edge width
             );
-    plt.title(title)
-    
+
+    fontx = {'color':'green','size':8}
+    plt.title(title, fontdict = fontx);
+   
 
     
 # Community visualization
 # Kaggle: https://www.kaggle.com/code/rahulgoel1106/commmunity-detection-using-igraph-and-networkx
 def communityVisualization(filename, pathToFolder, algo = nx.community.greedy_modularity_communities ,
                            ax= None, title = None, withLabels = False, font_size = 8, edgewidth = 0.1,
-                           colorList =  ["orange","yellow","cyan","green","red", "purple"]):
+                           node_size = None, k = None, colorList =  ["orange","yellow","cyan","green","red", "purple"]*20,
+                           takeGraphSample = False, noSampleNodes=100):
     """
     Desc
     ----
@@ -941,8 +999,10 @@ def communityVisualization(filename, pathToFolder, algo = nx.community.greedy_mo
     withLabels : boolean, Should labels be displayed? The default is False.
     font_size : int, Label font size. The default is 8.
     edgewidth: float, Edge line width
+    node_size: int
+    k: float; optimal distance between nodes. 
     colorList: List of colors for difft communitied. 
-               Default is: ["orange","yellow","cyan","green","red","purple"]
+               Default is: ["orange","yellow","cyan","green","red","purple"]*20
 
     Returns
     -------
@@ -951,8 +1011,22 @@ def communityVisualization(filename, pathToFolder, algo = nx.community.greedy_mo
     """
     filepath = pathToFolder / filename
     G = nx.read_gml(filepath) 
+    if (len(G.edges())) == 0: 
+        print("This network has no edges. Moving ahead.")
+        return 
+
+    
+    # If network is very large, take a sanple
+    # Ref: https://stackoverflow.com/a/62407941/3282777
+    if takeGraphSample:
+        sampled_nodes = np.random.choice(G.nodes, noSampleNodes)
+        G = G.subgraph(sampled_nodes)
+        if (len(G.edges())) == 0: 
+            print("This network has no edges. Moving ahead.")
+            return 
+    
     colors = colorList
-    pos = nx.spring_layout(G)
+    pos = nx.spring_layout(G, k)
     
     if algo == nx.community.girvan_newman:
         lst_b = algo(G)
@@ -973,12 +1047,20 @@ def communityVisualization(filename, pathToFolder, algo = nx.community.greedy_mo
         color_map_b[n] = colorList[counter]
       counter = counter + 1
     nx.draw_networkx_edges(G, pos, width = edgewidth, ax =ax);
-    nx.draw_networkx_nodes(G, pos, node_color=dict(color_map_b).values(), ax =ax);
+    
+    if node_size is not None:
+        nx.draw_networkx_nodes(G, pos, node_size = node_size, node_color=dict(color_map_b).values(), ax =ax);
+    else:
+        nx.draw_networkx_nodes(G, pos,  node_color=dict(color_map_b).values(), ax =ax);
     if withLabels:
       nx.draw_networkx_labels(G, pos, font_size = font_size, font_weight = 'bold',ax =ax)
     plt.axis("off");
-    plt.title(title)
+    
+    fontx = {'color':'green','size':8}
+    plt.title(title, fontdict = fontx);
+
     #plt.show();    
+
 
 
 
@@ -1063,12 +1145,16 @@ def transformBinnedDF2Communities(columnNames,pathToGraphFolder, train_binned, a
     #  
     df = pd.DataFrame()
     for file in filelist:
+      print("Reading file: ", file)
       # 2.1 Load network
       # Get full filename that includes filepath
       filepath = Path(pathToGraphFolder) / file
       # Read the file as a network
       G = nx.read_gml(filepath)
-
+      if (len(G.edges())) == 0: 
+        print("This network has no edges. Moving ahead.")
+        continue 
+       
       # 2.2 Calculate community classes using algo
       #    cm_mod contains as many frozensets of nodes
       #    as there are communities:
@@ -1079,6 +1165,7 @@ def transformBinnedDF2Communities(columnNames,pathToGraphFolder, train_binned, a
           cm_mod = [frozenset(i) for i in cm_mod ]
       else:
           cm_mod = algo(G)
+          #print(cm_mod)
 
       # 3.0 We now create dict corresponding to
       #     all communities in cm_mod
@@ -1110,9 +1197,10 @@ def transformBinnedDF2Communities(columnNames,pathToGraphFolder, train_binned, a
       # Extract column name from file:
       colToProject = file.split('_')[0]
       # Map train_binned column using the dict
-      df[file] = train_binned[colToProject].map(fset_dict)
+      df[file] = (train_binned[colToProject].astype(str)).map(fset_dict)
       # Continue for loop for the next filelist
     return map_list,df
+
 
 
 
