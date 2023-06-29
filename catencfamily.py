@@ -1,4 +1,4 @@
-# 04th June, 2023
+# 29th June, 2023
 """
 References:
 Coding standard:
@@ -1750,6 +1750,8 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         first column is a cat col (same as the dict key, say, 'app').
         Other columns map each level in this column ('app') to difft 
         derived centrality measures (that, together, we call as vector).
+        It is possible that same level may have different vectors at
+        different row positions.
         """
         # Save target in a sep var
         target = X.pop('target')
@@ -1758,7 +1760,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         
         # Extract a dict: list_rel_cols.
         # Its keys are cat col names.
-        # For every key, say' app',
+        # For every key, say 'app',
         # value is a list (structure) of relevant
         # col-names
         list_rel_cols = self._getRelCols(datacols)
@@ -1781,7 +1783,12 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             # row-positions. There may be some diffrence between vectors of same 
             # level; so take an average level-wise. Resulting grouped dataframe 
             # has cat col as index, but sorted.
-            r = t.groupby(by = [key], sort = True).mean()
+            #-----
+            # Expt:29th June, 2023
+            r = t.copy()
+            r['target'] = target
+            #-----
+            r = r.groupby(by = [key], sort = True).mean()
             # Get also index ('app') as one of the columns
             r.reset_index(inplace = True)  
             if take_mean:
@@ -1795,7 +1802,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
     
         
     
-    def vectorsToTSV(self,X, take_mean = False, saveVectorsToDisk = True, filepath = None, impute = False):
+    def vectorsToTSV(self,X, take_mean = False, saveVectorsToDisk = True, filepath = None, impute = False, fnamesuffix = None):
         """
         Calls: _getCatVectors()
         Called by: main() when needed
@@ -1843,12 +1850,39 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                    Default is None.
         
         impute: boolean; Imputes X with median strategy and outputs impute model
-                for future use. If False,           
+                for future use. If False, 
+        fnamesuffix: str; A suffix to be added to tsv filenames
 
         Returns
         -------
         Outputs two objects: One, a dictionary with keys as cat cols and values as corresponding 
         DataFrames and the other an Impute model (or None).
+        Example: 
+                Our input DataFrame has four rows:
+                   'app'     'ip'     'os'
+                    203       198      4
+                    202       199      3
+                    205       198      4
+                    203       200     10
+        
+        vec_dict['app']
+        
+                 deg_    pr_   clu_
+        row 1   0.05    0.8    0.34 
+        row 2   0.003   0.78   0.45
+        row 3   0.33    0.32   0.17
+        row 4   0.051   0.79   0.34  (very similar to row 1)
+        
+        When take_mean = True then output dataframe has 3-rows
+        and mean of row1 and row4 are taken to represent
+        the corresponding level.
+        
+        In the meta data, 'label' column will store row-wise 'app'
+        values, ie:
+            203
+            202
+            205
+            203
 
         """
         # Check if X has a 'target' column
@@ -1888,7 +1922,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         if len(gap) !=0:
             print("For these columns we do not have vectors: ", gap)
             
-        vec_dict = r
+        vec_dict = r  # Our revised dict
         gc.collect()
         # If tsv files are not to be saved to disk:
         if not saveVectorsToDisk:
@@ -1905,6 +1939,11 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         
         if filepath is None:
             filepath = self.pathToStoreProgress
+            # If filepath folder does not exist, create one
+            if not (Path.is_dir(filepath)):
+                p = Path(filepath)
+                p.mkdir(parents=True, exist_ok=True)
+                
 
         # DataFrame to hold meta data
         vec_meta = pd.DataFrame(columns=["label","color"])
@@ -1917,16 +1956,24 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             if take_mean:
                 # Then, we do not have a target column
                 #  in vec_dict[i]
-                vec_meta['color'] = 0 
+                vec_meta['color'] =  vec_dict[i].pop('target') #   0 
             else:
                 vec_meta['color'] = vec_dict[i].pop('target')
             
-            fname = i + "_meta.tsv"  # say, app_meta.tsv
+            
+            if fnamesuffix is not None:
+                fname = i + fnamesuffix + "_meta.tsv"  # say, app_meta.tsv
+            else:
+                fname = i +  "_meta.tsv"  # say, app_meta.tsv
             p = Path(filepath) / fname    
             vec_meta.to_csv(p , sep="\t", header = True, index = False)
 
             # Next our vector file:
-            fname = i + ".tsv"
+            if fnamesuffix is not None:
+                fname = i + fnamesuffix + ".tsv"
+            else:
+                fname = i + ".tsv"
+                
             p = Path(filepath) / fname    
             # We need this for the next step
             colnames = vec_dict[i].columns
@@ -1940,9 +1987,11 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             # Not sure why the following 'sleep' line was needed!
             time.sleep(0.1)
         
-        # Task over. Print messages:    
-        print("Saved files are named as catcolname.tsv and catcolname_meta.tsv")
-        print(f"Folder is {filepath}" )
+        # Task over. Print messages:   
+        print("=============================================================")    
+        print("Saved files are named as '<catColname>.tsv' and '<catColname_meta>.tsv'")
+        print(f"You will find them in folder: '{filepath}'" )
+        print("=============================================================")    
         print("Load these file-pairs in tensorflow's 'Embedding Projector'")
         print("It helps in visualizing interrelationships among levels of a categorical feature")
         
