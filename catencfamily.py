@@ -1,8 +1,4 @@
-<<<<<<< Updated upstream
-# 29th June, 2023
-=======
 # 7th July, 2023
->>>>>>> Stashed changes
 """
 References:
 Coding standard:
@@ -1792,14 +1788,10 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             r = t.copy()
             r['target'] = target
             #-----
-<<<<<<< Updated upstream
-            r = r.groupby(by = [key], sort = True).mean()
-=======
             yu = list(r[key])
             # First column is key. Can be integer or category
             r = r.iloc[:,1:].groupby(by = yu, sort = True).mean()
             #r = r.groupby(by = [key], sort = True).mean()
->>>>>>> Stashed changes
             # Get also index ('app') as one of the columns
             r.reset_index(inplace = True)
             r=r.rename(columns = {'index' : key})
