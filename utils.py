@@ -1,4 +1,4 @@
-# 5th July, 2023
+# 27th July, 2023
 
 ## Utility functions
 
@@ -13,6 +13,8 @@ from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 from sklearn.feature_selection import  mutual_info_classif
 import networkx as nx
+# added 27th July, 2023
+from cdlib import algorithms
 import itertools
 import pickle
 import pathlib
@@ -998,6 +1000,7 @@ def communityVisualization(filename, pathToFolder, algo = nx.community.greedy_mo
           Examples: nx.community.kernighan_lin_bisection
                     nx.community.greedy_modularity_communities
                     nx.community.louvain_communities
+                    algorithms.leiden  (from cdlib library)
     ax: Matplotlib axis object
     withLabels : boolean, Should labels be displayed? The default is False.
     font_size : int, Label font size. The default is 8.
@@ -1035,8 +1038,12 @@ def communityVisualization(filename, pathToFolder, algo = nx.community.greedy_mo
         lst_b = algo(G)
         lst_b = tuple(sorted(c) for c in next(lst_b))
         lst_b = [frozenset(i) for i in lst_b ]
-    else:
+    # Changed on 27th July, 2023    
+    if algo ==  algorithms.leiden:
         lst_b = algo(G)
+        lst_b = [frozenset(i) for i in lst_b.communities ]
+    else:
+        lst_b = algo(G)    
 
     
     color_map_b = {}
