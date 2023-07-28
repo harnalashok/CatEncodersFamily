@@ -1,4 +1,4 @@
-# 7th July, 2023
+# 28th July, 2023
 """
 References:
 Coding standard:
@@ -548,8 +548,8 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         return nl    
     
    
-    
-    def _cleanup(self, X , single_permute_list_, ):
+    # 28th July Removed the comma
+    def _cleanup(self, X , single_permute_list_ ):
         """
         From every pair of columns of (colToProject,intermediaryCol),
         in the list, remove that pair where number of unique values 
@@ -1303,6 +1303,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         avg_embeddedness. It returns 3-dictionaries. The first dict indicates 
         which node falls in which community. The other two dictionaries 
         contain node-wise community characteristics.
+        Ref: https://cdlib.readthedocs.io/en/latest/reference/cd_algorithms/algs/cdlib.algorithms.leiden.html#cdlib-algorithms-leiden
         
         Parameters
         ----------
