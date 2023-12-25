@@ -1,4 +1,4 @@
-# 27th July, 2023
+# 24th Dec, 2023
 
 ## Utility functions
 
@@ -613,27 +613,31 @@ def pcaAndConcat(vec_train, vec_test, n_components = 2, scaleData = True):
     
     Desc
     ----
-    Given a dictionray of dataframes, the function performs PCA
-    on each dataframe and outputs a concatenated dataframe. 
-    This it does for both the dictionaries and outputs two dataframes. 
+        Given a dictionray with keys as respective cat-columns 
+        and the values as dataframes (of unitvectors), the function 
+        performs PCA on each value (ie. the dataframe) and outputs 
+        one concatenated DataFrame. This it does for both train/test
+        dictionaries. 
     
     Example: 
-        Assume our training data has 5-cat columns. Corresponding
-        to every col the input dict will have 5-dataframes of 
-        unit vectors. No of rows in each dataFrame would be the same
-        that is as many as in train/test data. 
-        Take PCA of each dataframe and reduce the unit vectors to
-        2-cols. Thus, we will have 10 columns in all. Concatenate
-        these 10 columns to make our revised training/test data.
+        Assume our original training data had 5-cat columns. These
+        5-cat-cols would be keys of dict: vec_train and vec_test. 
+        Corresponding to every key the input dict will have 
+        5-dataframes of unit vectors as values. No of rows in each 
+        dataFrame would be the same, that is, as many as in train/test 
+        data. We then take PCA of each dataframe and reduce the 
+        unit vectors to n_components (default is 2 columns). Thus, 
+        we will have 5 X n_components in all. We concatenate these 
+        5 X n_components (or columns) to make our training/test data.
     
     Parameters
     ----------
     
-    vec_train: Dictionary of Dataframes. It would contain unit vectors
-               per-level per-row for each cat col of train data.
+    vec_train: Dictionary of Dataframes with keys as cat-cols.
+               It would contain unit vectors per-level per-row 
+               for each cat col of train data.
                
-    vec_test:  Dictionary of Dataframes. It would contain unit vectors
-               for each cat col of test data.         
+    vec_test:  Same as vect_train but for tes data        
                
     n_components: int, No of PCA components to reduce each DataFrame to.
                   Default is 2.
@@ -661,35 +665,36 @@ def pcaAndConcat(vec_train, vec_test, n_components = 2, scaleData = True):
     # StandardScale before PCA
     if scaleData:
         for key in rt:
-            print(f"Performing PCA for {key} for train data")
+            print(f"Performing PCA for column, {key} , in train data")
             # Instantiate PCA
             pca = PCA(n_components = n_components)
             ss = StandardScaler()
             # Perform PCA of train DataFrame of unit vectors
             k = pca.fit_transform(ss.fit_transform(vec_train[key]))
             vt[key] = pd.DataFrame(k, columns = ['pc' + key+ str(i) for i in range(n_components)])
-            print(f"Performing PCA for {key} for test data")
+            print(f"Performing PCA for column, {key} , in test data")
             # Transform test data now
             k = pca.transform(ss.transform(vec_test[key]))
             ve[key] = pd.DataFrame(k, columns = ['pc' + key +str(i) for i in range(n_components)])
     else:
         for key in rt:
-            print(f"Performing PCA for {key} for train data")
+            print(f"Performing PCA for column, {key} , in train data")
             # Instantiate PCA
             pca = PCA(n_components = n_components)
             # Perform PCA of train DataFrame of unit vectors
             k = pca.fit_transform(vec_train[key])
             vt[key] = pd.DataFrame(k, columns = ['pc' + key+ str(i) for i in range(n_components)])
-            print(f"Performing PCA for {key} for test data")
+            print(f"Performing PCA for column, {key} , in test data")
             # Transform test data now
             k = pca.transform(vec_test[key])
             ve[key] = pd.DataFrame(k, columns = ['pc' + key +str(i) for i in range(n_components)])
     
     obj_tr = [ vt[rt[i]]  for i in range(len(rt))]
     obj_te = [ ve[rt[i]]  for i in range(len(rt))]
-    print("Concatenating train data")
+    # Amended 24th Dec, 2023
+    print("Concatenating PCAs of train data")
     cc_tr = pd.concat(obj_tr, axis = 1)
-    print("Concatenating test data")
+    print("Concatenating PCAs of test data")
     cc_te = pd.concat(obj_te, axis = 1)
     print("Done......")
     return cc_tr,cc_te,  vt ,ve, 
