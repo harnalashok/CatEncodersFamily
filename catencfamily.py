@@ -1,4 +1,4 @@
-# 28th July, 2023
+# 24th Dec, 2023
 """
 References:
 Coding standard:
@@ -35,7 +35,7 @@ from datetime import datetime
 import  matplotlib.pyplot as plt
 import itertools
 from pathlib import Path
-import re, time,gc
+import re, time,gc, pickle
 
 
 
@@ -62,10 +62,15 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
     
     """
     
+    
+    
+    
     def __init__(self,  pathToStoreProgress = None, modelsPath= None,
-                 cMeasures=[1,1,1,0,None,1,1],  noOfColsToConcat = 2, 
+                 mapDictPath = None, cMeasures=[1,1,1,0,None,1,1],  noOfColsToConcat = 2, 
                  k = None, n_iter = 1, sampsize= 0.8, avg = True,
-                 saveGraph = False, cutoff = 10, verbose = 3, random_state = None):
+                 saveGraph = False, cutoff = 10, verbose = 3, 
+                 mergelevelsincols = None,mergethreshold = None, replaceby = '99999',
+                 avoidInteractionFeatures = None, multigraph = False, random_state = None):
         """
 
         Parameters
@@ -136,6 +141,23 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         random_state: int; Controls the shuffling applied to the data before applying the 
                       train_test_split. Pass an int for reproducible output across multiple 
                       function calls.
+                      
+        mapDictPath: string; Name of folder where dictionaries are kept that map existing levels
+                     to 'replaceby' values.                
+                      
+        mergelevelsincols: list of str; List of columns whose levels need to be merged through multiple
+                           iterations. Certain large datasets have few cols with very large 
+                           number of levels. This is a list of such columns. Presently only one
+                           column is supported.
+        mergethreshold: list of floats : Merge threshold levels for each column, listed in 
+                                         mergelevelsincols    
+        replaceby: String integer; Name of new level when multiple levels are merged. Default
+                   '99999'
+                   
+        avoidInteractionFeatures: List; For col names listed here, avoid combination with 
+                                  created interaction features  
+        multigraph: Bipartite to unipartite projection yields simple graph or multigraph.
+                    It will yield multigraph when multigraph = True                          
                   
 
         Returns
@@ -160,6 +182,12 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         self.cutoff = cutoff
         self.verbose = verbose  # Presently unused
         self.random_state = random_state
+        self.mergelevelsincols = mergelevelsincols
+        self.mergethreshold = mergethreshold
+        self.mapDictPath = mapDictPath
+        self.replaceby = replaceby
+        self.avoidInteractionFeatures = avoidInteractionFeatures
+        self.multigraph = multigraph
 
 
     
@@ -339,7 +367,21 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         if self.cMeasures[4] is None:   # No function object specified
             assert u != 0 , "cMeasures improperly specified"
             
-        assert self.cutoff > 0, "cutoff can not be 0 or negative. Default is 10."    
+        assert self.cutoff > 0, "cutoff can not be 0 or negative. Default is 10." 
+        
+        if self.mergelevelsincols is None:
+            self.mergelevelsincols = []
+            
+        if self.avoidInteractionFeatures is None:
+            self.avoidInteractionFeatures = []
+
+            
+        if len(self.mergelevelsincols) > 0:
+            assert len(self.mergethreshold) > 0 , "mergethreshold can not be none"
+            assert len(self.mergelevelsincols) == len(self.mergethreshold) , "Mismatch between lengths of mergelevelsincols and mergethreshold"
+            assert self.n_iter > 1 , "Number if iterations, n_iter must be more than 1"
+            assert self.mapDictPath is not None, "mapDictPath can not be None when mergelevelsincols is not None"
+
         return
         
         
@@ -388,6 +430,9 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         # Make a copy so as not to change
         #  orig data
         X = X.copy()
+        
+        if len(self.mergelevelsincols) > 0 : 
+            X = self._updateLevels(X)
         
         if not hasattr(self, 'encoding_'):
             raise AttributeError("catEncoder must be fitted")
@@ -571,6 +616,9 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         # For every tuple (colToProject,intermediaryCol) 
         #  in single_permute_list_
         for i in single_permute_list_:
+            
+            if i[0] in self.avoidInteractionFeatures and "_p_" in i[1]:
+                continue 
             # get no of unique values in colToProject 
             n = X[i[0]].nunique()
             # Only if n exceeds a limit,
@@ -1139,7 +1187,10 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         #  having the 'bipartite' property as 0.
         nodes1 = set(n for n,d in bi_network.nodes(data=True) if d['bipartite']==0)
         # Return projected network
-        return bipartite.projected_graph(bi_network, nodes1, multigraph = False)
+        if self.multigraph:
+            return bipartite.projected_graph(bi_network, nodes1, multigraph = True)
+        else:
+            return bipartite.projected_graph(bi_network, nodes1, multigraph = False)
 
 
 
@@ -1185,7 +1236,9 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         else:
             model.extend([None]*5)    # model[0] to model[4]: deg,eig,pr,bet,cl_coeff
         
-        if (self.cMeasures[6] == 1):    
+        if (self.cMeasures[6] == 1): 
+            if self.multigraph:
+                network = nx.Graph(network)
         #if communities:
             gr,gr1,gr2 = self._calCommunities(network,colToProject,intermediaryCol )
             if gr is not None:
@@ -1239,7 +1292,12 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             deg = nx.degree_centrality(network)
         else :
             deg = None
-    
+            
+        # MultiGraph is only used in degree calculation 
+        #  Revert to Simple Graph
+        if self.multigraph:
+            network = nx.Graph(network)
+        
         # eig
         if (self.cMeasures[1] == 1) :
             eig = nx.eigenvector_centrality_numpy(network) # Run eigenvector centrality
@@ -1609,6 +1667,9 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                                         stratify = y,
                                         random_state = self.random_state)
         
+        print("Sample size is: ", X_test.shape)
+        X_test =  self._levelsTransformer(X_test)
+
         return X_test
     
         
@@ -1659,22 +1720,32 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
     
     def _getRelCols(self, cols):
             """
+            Calls: None
+            Calledby: _getCatVectors()
             
             Desc
             ----
             
-            We started with a dataframe with a number of categorical features
-            These categorical features were transformed into dense vectors
-            through our model formation process. We now intend to get dense
-            vectors for each one of these cat features.
-            What columns constitute dense vectors for each cat?
-            The method returns lists of cols that constitute dense vectors
-            for each one of cat cols, such as: app, ip etc
-            For example, cols related to app could be:
-            ['deg_app_ck_channel', 'deg_app_ck_device', 'deg_app_ck_ip', 'deg_app_ck_os'...]   
-            but not:
-            [pr_app_p_os_ck_ip, deg_app_p_channel_ck_os.. ], as here we have concatenated
-            cols (app,os) and (app,channel).
+                Gets related numeric columns. We started with a dataframe 
+                with a number of categorical features. These categorical 
+                features were transformed into dense vectors through our model 
+                formation process. We now intend to extract subset of dense vectors 
+                for each one of these cat features in a dictionary format. But 
+                before that we have to answer the question: for a specifc 
+                cat column, which of the columns among the transformed data 
+                constitute the dense veactors representing it.
+                
+                This method returns lists of cols that constitute dense vectors
+                for each one of cat cols, such as: app, ip etc For example, 
+                cols related to feature app could be:
+                
+                ['deg_app_ck_channel','deg_app_ck_device','deg_app_ck_ip', 'deg_app_ck_os'...]   
+                
+                but not:
+                
+                [pr_app_p_os_ck_ip, deg_app_p_channel_ck_os.. ], 
+                
+                as here we have concatenated cols (app,os) and (app,channel).
             
             Parameters:
             ----------
@@ -1714,45 +1785,55 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         
         Desc
         ----
-        We now extract dense vectors cat col by cat col, for every level in
-        the column.
-        Given a cat col, this method outputs for every level, corresponding
-        vector values. The output is in a DataFrame format where one of the 
-        columns is cat col with its various levels and the other columns
-        in the same row contain vector. 
+            We now extract dense vectors cat-col by cat col, for every level in
+            the column.
+            Given a cat col, this method outputs for every level, corresponding
+            vector values. The output is in a DataFrame format where one of the 
+            columns is cat col with its various levels and the other columns
+            in the same row contain vector. 
         
         Parameters
         ----------
         
-        X : pandas DataFrame. Transformed DataFrame with transformed  
-            cols and optionaly original ones (as in cat_cols).
+        X : pandas DataFrame. Transformed DataFrame. Transformed dataframe 
+            may also have, optionaly, original cat cols.
         take_mean: boolean. As a level value may be occurring many
-                   times under a cat col(say, 'app'), to create a final
-                   vector should a mean of all vectors for each level 
-                   be taken or not. Default is False.
+                   times under any cat col(say, 'app'), to create a final
+                   transformtion vector should a mean of all vectors  
+                   for each levelbe taken or not. Default is False.
                    
                    Example:
-                       
-                       app  deg_..   pr_...   eig_...
-                      213   0.10     0.20     0.11
-                      214   0.45     0.18     0.22
-                      ...   ...      ...      ...
-                      ...   ...      ...      ... 
-                      213   0.101    0.20     0.10
-                      ...   ...      ...      ... 
+                   This is the the transformed dataset but also having
+                   original cat cols along with transformed numeric cols.
+                   Columns have been rearranged so that numeric cols 
+                   that correspond to a cat-col, say, app, are next to it.
+                                          
+                 index     app  deg_app_ck..   pr_app_ck_...   eig_app_ck... 
+                    0      213   0.10           0.20             0.11
+                    1      214   0.45           0.18             0.22
+                    ..     ...   ...            ...               ...
+                    ..     ...   ...            ...               ... 
+                   1456    213   0.101          0.20             0.10
+                    ..     ...   ...            ...               ... 
                       
-                  If take_mean is True, a final vector for each level 
-                  of 'app' (213) would be calculated by taking mean. 
+                  For level 213 of 'app' col, we have two vectors: [0.10,0.20,0.11]
+                  and [0.101,0.20,0.10] at different index positions. 
+                  We call them dense vectors. When normalized (along rows) 
+                  using l2 norm, we call them unitvectors. If take_mean is True, 
+                  a final vector for each level of 'app' (say, 213) would be 
+                  calculated by taking mean of these vectors. This fnal vector 
+                  cane be used in Embedding Projector for plotting and displaying 
+                  relationship among levels of a catcol                  
     
         Returns
         -------
-        A dictionary with keys as column names in cat_cols. For every key,
-        in the dict (say, 'app')', value is a dataframe. The dataframe's
-        first column is a cat col (same as the dict key, say, 'app').
-        Other columns map each level in this column ('app') to difft 
-        derived centrality measures (that, together, we call as vector).
-        It is possible that same level may have different vectors at
-        different row positions.
+            A dictionary with keys as column names in cat_cols. For every key,
+            in the dict (say, 'app')', value is a dataframe. The dataframe's
+            first column is a cat col (same as the dict key, say, 'app').
+            Other columns map each level in this column ('app') to difft 
+            derived centrality measures (that, together, we call as unitvectors).
+            It is possible that same level may have different vectors at
+            different row positions.
         """
         # Save target in a sep var
         target = X.pop('target')
@@ -1817,7 +1898,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         This method transforms the vector dataframe of _getCatVectors()
         to two tsv files (per cat column) for uploading in tensorflow's
         'Embedding Projector'. One tsv file (say, app.tsv) has vectors :
-        Example of 3 vectors with dimension 4:
+        Example of file with 3-unitvectors with dimension 4:
             
            0.1\t0.2\t0.5\t0.9
            0.2\t0.1\t5.0\t0.2
@@ -2127,6 +2208,244 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                 pos = nx.spring_layout(G, k = k)
                 nx.draw_networkx(G,pos = pos, node_size=30, with_labels =  withLabels, font_size=fontSize, node_color = 'r', ax =ax)
         return
+    
+ 
+    # Save dictionary to file
+    def _save_dict_to_file(self,dic, filename):
+        """
+        Called by: levelsTransformer()
+        Given a dictionary and 'filename',
+        saves dict as a .pkl file at
+        folder: pathToFile.
+        """
+        filename = Path(self.mapDictPath) / filename
+        with open(filename, 'wb') as f:
+            pickle.dump(dic, f)
+            
+            
+            
+    # Called by updateLevels(), levelsTransformer()
+    #   and readAllMappingDict()
+    def _load_dict_from_file(self,filename):
+        """
+        Called by: _updateLevels(), _levelsTransformer() 
+        Returns dictionary saved into a pickle file: 'filename'
+          'filename' is in folder 'pathToFile'.
+        """
+        filename = Path(self.mapDictPath) /  filename
+        with open(filename, 'rb') as f:
+            loaded_dict = pickle.load(f)
+        return loaded_dict
+            
+    
+    def _levelsTransformer(self, X, action = False):
+        """
+        Calls: _load_dict_from_file(), _mergeRareLevels(), _save_dict_to_file()
+        Called by: _getSample()
+    
+        Parameters
+        ---------
+        df: Dataframe under consideration
+        feature: Column whose levels are to be reduced
+        thresholdValue_count: If integer, keep only those levels whose value_count
+                              exceeds this number. If float, keep only those levels
+                              whose percentages are above this value.
+        mapdictpath : Dictionary which stores mapping between existing levels
+                      and new levels.
+        action: The value determines how an integer thresholdValue_count will be 
+                interpreted: Either permit those levels whose value_counts() exceed
+                this value (action = False) or set max number of unique levels
+                to this value (action = True).
+        Usage
+        -----
+        X =  utils.levelsTransformer(X, 'ip',mergethreshold, mapdictpath, action)
+        Returns
+        ------
+        Returns DataFrame with reduced levels for 'feature' column
+        """
+        # Does this file exist:
+        filename = "mapLevelsDict" + "_" + self.mergelevelsincols[0] +".pkl"
+        mf = Path(self.mapDictPath) / filename
+        # If yes read mapping dictinary
+        if mf.is_file():
+            #mapdict = load_dict_from_file("mapLevelsDict_device.pkl", mapdictpath)
+            mapdict = self._load_dict_from_file(filename)
+            print("Existing saved dictionary loaded")
+        else:
+            print("No saved dictionary exists as yet.")
+            mapdict = None
+    
+        X,mapdict = self._mergeRareLevels( X,mapdict,  action)
+    
+        #if isinstance(thresholdValue_count, int):
+            # Update mapping dictionary
+        #    df, mapdict = mergeRareLevels(df,feature, thresholdValue_count, mapdict)
+        #else:
+            # thresholdValue_count is float
+        #    df, mapdict = mergeLevels(df,feature, mapdict, thresholdValue_count)
+    
+        # Save updated dictionary
+        self._save_dict_to_file(mapdict, filename)
+        return X
+        
+        
+
+    # Amended on 6th March, 2023
+    def _mergeRareLevels(self, X, mapdict = None,  action= False):
+        """
+        Called by: self._levelsTransformer()
+        
+        Desc
+        ----
+        A mapdict is a dictionary where 'key' is old_level
+        name and value is the new level name ('99999').
+        For a level which has high occurrenceThreshold,
+        both 'key' and 'value' would be same. If no earlier
+        mapdict exist:
+            In df[colName] merge all those level-names
+            by 'replaceby' whose total count is less
+            than or equal to occurrenceThreshold. A
+            new model created and returned.
+        If a mapdict already exists:
+            the mapdict is updated only to the extent
+            of new key. if an existing key in the existing
+            mapdict now is to get a new value, that updation
+            is NOT carried out.
+        Parameters
+        ---------
+        df: DataFrame
+        colName: Columns whose levels are to be examined for rareness
+        occurrenceThreshold: This decides if a level is rare and be merged
+        mapdict: Mapping of actual levels with merged levels
+        action: The value determines how an integer occurrenceThreshold will be 
+                interpreted: Either permit those levels whose value_counts() exceed
+                this value (action = False) or set max number of unique levels
+                to this value (action = True).
+
+        Returns
+        -------
+        mapdict and dataframe modified as per the mapdict.
+        """
+        # See code examples at the end of this module
+        # Get present value_counts of each level
+        series = X[self.mergelevelsincols[0]].value_counts()
+        if isinstance(self.mergethreshold[0], int):
+            if not action:
+                # Is any value_count greater than occurrenceThreshold
+                cond = series > self.mergethreshold[0]
+            else:
+                # Limit number of unique levels to occurrenceThreshold
+                series[:self.mergethreshold[0]] = True
+                series[self.mergethreshold[0]:] = False
+                cond = series
+        else:
+            # occurrenceThreshold is a percentage value
+            #  ie occurrenceThreshold%
+            cond = ((series/series.sum()) * 100) > self.mergethreshold[0]
+        # Now, get revised replacement values.
+        remapped_levels = np.where(cond, series.index, self.replaceby)
+        # Create a dictionary of what is to be replaced with what
+        # This will also serve as model for future data
+        currentmodel = {i:j for i, j in zip(series.index,remapped_levels)}
+    
+        if mapdict is not None:
+            # Revise the model as per current. Include new keys only
+            #  Let earlier key-value pairs remain as they are:
+                
+            # First get those model.keys() whose value is not replaceby
+            p_keys = []
+            for i in mapdict.keys():
+                val = mapdict[i]
+                if val != self.replaceby:
+                    # The value of this key will not be replaced by replaceby
+                    p_keys.append(i)
+                   
+            #newkeys = set(currentmodel.keys()) - set(model.keys())
+            # p_keys were above threshold level in earlier cases
+            #  so no need to modify them
+            newkeys = set(currentmodel.keys()) - set(p_keys)
+            for keys in newkeys:
+                mapdict[keys] = currentmodel[keys]
+            modelToApply = mapdict
+        else:
+            modelToApply = currentmodel
+    
+        # The following code is very slow
+        #df[colName] = df[colName].replace(model)
+        # This one using map() is fast
+        # https://stackoverflow.com/a/41987136
+        X[self.mergelevelsincols[0]] = X[self.mergelevelsincols[0]].map(modelToApply.get)
+        return  X, modelToApply
+          
+    
+
+    def _updateLevels(self,df):
+        """
+        Desc
+        ======
+            Given a set of saved dictionaries, that map Existing
+            column levels (keys in the dict) to new levels (values
+            in the dict), this function updates DataFrame column
+            values (levels) as per the mapping specified in the
+            correspondng keys of dict.
+        
+        Parameters:
+        ===========
+            df: Pandas dataframe 
+            
+        Returns
+        ========
+            Dataframe after column levels have been replaced by
+            a given mapping as specified in a file in  mapDictPath   
+    
+        """
+        # Read all files storing mapping dictionaries
+        #files = os.listdir(mapdictpath)
+        files = list(Path(self.mapDictPath).iterdir())
+        
+        # If the folder does not hold any map file
+        if (len(files) == 0):
+            return df
+        
+        for file in files:
+            # split filename only at the first "_"
+            # We get the column name wherein levels are
+            #  to be mapped/updated
+            #  Example" mapLevelsDict_channel_p_ip.pkl
+            colName = str(file).split("_", 1)[1]   # Column 'channel_p_ip.pkl'
+            colName = colName.split(".")[0]   # Jettison ''.pkl'; get: 'channel_p_ip'
+    
+            if colName in self.cat_cols:
+                # Get its datatype
+                datatype = df[colName].dtype
+                # Read the Dictionary into 'mapdict'
+                mapdict = self._load_dict_from_file(Path(file))
+                # Get all keys
+                keys_df = list(df[colName])
+                # GEt all keys in mapdict
+                keys_mapdict = list(mapdict.keys())
+                # mapdict does not have mapping for the following keys:
+                not_present_keys = set(keys_df) -set(keys_mapdict)
+                # So create default mapping
+                values = [self.replaceby]*len(not_present_keys)
+                d = dict(zip(not_present_keys, values))
+                # Update mapdict with these added mappings
+                mapdict.update(d)
+                # Perform transformation as per updated dictionary
+                df[colName] = df[colName].map(mapdict.get)
+                # Reset datatype
+                df[colName] = df[colName].astype(datatype)
+        return df
+    
+    
+    
+ 
+    
+ 
+    
+ 
+    
+ 
     
  ###############333##################               
        
