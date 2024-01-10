@@ -1,4 +1,4 @@
-# 24th Dec, 2023
+# 10th Jan, 2024
 """
 References:
 Coding standard:
@@ -24,6 +24,8 @@ from cdlib import algorithms, evaluation
 
 
 # 1.02
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import normalize
@@ -2084,6 +2086,142 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         # Return the dict, and impute model used
         return vec_dict, si
         
+    
+    def _pcaAndConcat(self, train_trans, test_trans,  n_components = 2, scaleData = True):
+        """
+        Calls: vectorsToTSV()
+        Called by: main method as needed    
+        
+        
+        Desc
+        ----
+            Given a dictionray with keys as respective cat-columns 
+            and the values as dataframes (of unitvectors), the function 
+            performs PCA on each value (ie. the dataframe) and outputs 
+            one concatenated DataFrame. This it does for both train/test
+            dictionaries. 
+        
+        Example: 
+            Assume our original training data had 5-cat columns. These
+            5-cat-cols would be keys of dict: vec_train and vec_test. 
+            Corresponding to every key the input dict will have 
+            5-dataframes of unit vectors as values. No of rows in each 
+            dataFrame would be the same, that is, as many as in train/test 
+            data. We then take PCA of each dataframe and reduce the 
+            unit vectors to n_components (default is 2 columns). Thus, 
+            we will have 5 X n_components in all. We concatenate these 
+            5 X n_components (or columns) to make our training/test data.
+        
+        Parameters
+        ----------
+        
+        train_trans : pandas DataFrame. Transformed DataFrame of train data 
+                      with transformed cols and also original columns (same 
+                      as in cat_cols). It should also contain target column
+                      with name as 'target'.
+        test_trans:   pandas DataFrame. Transformed DataFrame of test data 
+                      with transformed cols and also original columns (same 
+                      as in cat_cols). It should also contain target column
+                   
+        n_components: int, No of PCA components to reduce each DataFrame to.
+                      Default is 2.
+        scaleData: boolean; Should data be centered and scaled before PCA?
+                   Default is True.
+        
+        Returns
+        -------
+        
+        Concated dataframes and two dictionaries. Each dictionary is of 
+        DataFrames, as before, except that evry DataFrame that was input
+        is replaced by its PCA version with as many columns as n_components.
+        Two dictionaries returned are mainly for debugging purposes.
+    
+        """
+        
+        
+        vec_train,_ = self.vectorsToTSV(train_trans,
+                                      saveVectorsToDisk = False
+                                     )
+        
+        vec_test,_ = self.vectorsToTSV(test_trans,
+                                    saveVectorsToDisk = False
+                                    )
+        # Do not alter original dataframes
+        #  This step needs to be examined. 
+        #   Though technically correct, but is 
+        #    it necessry to take a copy
+        vt = vec_train.copy()
+        ve = vec_test.copy()
+        
+        # What all columns exist?
+        rt = list(vt.keys())
+        
+        # For every col in rt
+        # StandardScale before PCA
+        if scaleData:
+            for key in rt:
+                print(f"Performing PCA for column, {key} , in train data")
+                # Instantiate PCA
+                pca = PCA(n_components = n_components)
+                ss = StandardScaler()
+                # Perform PCA of train DataFrame of unit vectors
+                k = pca.fit_transform(ss.fit_transform(vec_train[key]))
+                vt[key] = pd.DataFrame(k, columns = ['pc' + key+ str(i) for i in range(n_components)])
+                print(f"Performing PCA for column, {key} , in test data")
+                # Transform test data now
+                k = pca.transform(ss.transform(vec_test[key]))
+                ve[key] = pd.DataFrame(k, columns = ['pc' + key +str(i) for i in range(n_components)])
+        else:
+            for key in rt:
+                print(f"Performing PCA for column, {key} , in train data")
+                # Instantiate PCA
+                pca = PCA(n_components = n_components)
+                # Perform PCA of train DataFrame of unit vectors
+                k = pca.fit_transform(vec_train[key])
+                vt[key] = pd.DataFrame(k, columns = ['pc' + key+ str(i) for i in range(n_components)])
+                print(f"Performing PCA for column, {key} , in test data")
+                # Transform test data now
+                k = pca.transform(vec_test[key])
+                ve[key] = pd.DataFrame(k, columns = ['pc' + key +str(i) for i in range(n_components)])
+        
+        obj_tr = [ vt[rt[i]]  for i in range(len(rt))]
+        obj_te = [ ve[rt[i]]  for i in range(len(rt))]
+        # Amended 24th Dec, 2023
+        print("Concatenating PCAs of train data")
+        cc_tr = pd.concat(obj_tr, axis = 1)
+        print("Concatenating PCAs of test data")
+        cc_te = pd.concat(obj_te, axis = 1)
+        print("Done......")
+        return cc_tr,cc_te, vt ,ve 
+    
+    
+    def _extractPC0sUnitvectors(self,train_trans,test_trans,n_components):
+        """
+        Parameters
+        ----------
+        train_trans : pandas DataFrame. Transformed DataFrame of train data 
+                      with transformed cols and also original columns (same 
+                      as in cat_cols). It should also contain target column
+                      with name as 'target'.
+        test_trans:   pandas DataFrame. Transformed DataFrame of test data 
+                      with transformed cols and also original columns (same 
+                      as in cat_cols). It should also contain target column
+                   
+        n_components: int, No of PCA components to reduce each DataFrame to.
+                      Default is 2.
+
+        Returns
+        -------
+        Two Dataframes, onefor train data and the other for test data. Dataframes
+        only contain Ist pricipal component of each unitvector.
+
+        """
+        cc_tr,cc_te, _ , _ = self._pcaAndConcat(train_trans, test_trans, n_components = 2)
+        
+        #  Columns containing only Ist PCs:
+        cols = [i for i in cc_tr.columns if '0' in i]
+        return cc_tr[cols],cc_te[cols]
+    
     
         
         # Networkx graph visualizaton:
