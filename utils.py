@@ -1,4 +1,4 @@
-# 24th Dec, 2023
+# 14th Jan, 2024
 
 
 ## Utility functions
@@ -731,7 +731,7 @@ def calMIScores(X, y):
 
 
 
-def plotSeries(scores, title= ""):
+def plotSeries(scores, title= "", xlabel = ""):
     """
     Desc
     ----
@@ -746,7 +746,8 @@ def plotSeries(scores, title= ""):
     Parameters
     ----------
     scores: Pandas Series
-    title: Graph title; default: Empty str
+    xlabel: str; X-label for X-; default: Empty str
+    title: str; Graph title; default: Empty str
     
     """
     # Scores sorted in ascending order:
@@ -759,6 +760,7 @@ def plotSeries(scores, title= ""):
     plt.barh(width, scores)
     # Plot yticks
     plt.yticks(width, ticks)
+    plt.xlabel(xlabel)
     plt.title(title)
     
     
