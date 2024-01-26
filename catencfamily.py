@@ -1,11 +1,11 @@
-# 15th Jan, 2024
+# 26th Jan, 2024
 """
 References:
 Coding standard:
     https://gist.github.com/nateGeorge/5455d2c57fb33c1ae04706f2dc4fee01
     
 Developing sklearn estimators:
-    https://scikit-learn.org/stable/developers/develop.html 
+    https://scikit-l111earn.org/stable/developers/develop.html 
     
 Project template:
     https://github.com/scikit-learn-contrib/project-template/    
@@ -38,6 +38,8 @@ import  matplotlib.pyplot as plt
 import itertools
 from pathlib import Path
 import re, time,gc, pickle
+
+
 
 
 
@@ -116,9 +118,10 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                            ['a','b','c'] new concatenated cols will be: ['a+b', 'a+c', 'b+c']
 
         k : int; If k is not None use k node samples to estimate betweenness.
-           The value of k <= n where n is the number of nodes in the graph.
-           Higher values give better approximation. Only relevant if betweenness centrality
-           is to be calculated.
+            The value of k <= n where n is the number of nodes in the graph.
+            Higher values of k give better approximation. If k is more than n,
+            then its value is clipped to n.  (Only relevant if betweenness 
+            centrality is to be calculated.)
            
         n_iter : int; The number of times cMeasures are to be calculated over different samples of data,
                  Default is 1 when cMeasures is calculated over complete data.
@@ -1324,6 +1327,14 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                 print("Calculating betweenness centrality with k = All nodes")
             else:
                 print(f"Calculating betweenness centrality with k = {self.k} nodes sample")
+                
+            # Amedned on 26th Jan, 2024
+            # Check noOfnodes
+            noOfnodes = len(network) 
+            
+            if self.k >  noOfnodes:
+                self.k = noOfnodes
+    
             bt = nx.betweenness_centrality(network, k = self.k)
             print("Betweenness centrality calculated")
             model.append(bt)  # model[3]
