@@ -1,4 +1,4 @@
-# 26th Jan, 2024
+# 14th Feb, 2024
 """
 References:
 Coding standard:
@@ -72,7 +72,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
     def __init__(self,  pathToStoreProgress = None, modelsPath= None,
                  mapDictPath = None, cMeasures=[1,1,1,0,None,1,1],  noOfColsToConcat = 2, 
                  k = None, n_iter = 1, sampsize= 0.8, avg = True,
-                 saveGraph = False, cutoff = 10, verbose = 3, 
+                 saveGraph = False, cutoff = 10, verbose = 0, 
                  mergelevelsincols = None,mergethreshold = None, replaceby = '99999',
                  avoidInteractionFeatures = None, multigraph = False, random_state = None):
         """
@@ -140,8 +140,8 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         cutoff: int; If number of levels in any one of the cat columns (or concatenated cat
                 cols) are below cutoff, ignore that cat col. (see _cleanup())
                     
-        verbose : int; Intensity of msgs to be displayed. Presently, this parameter may not 
-                  display much control over display of msg(s). The default is 3.
+        verbose : int; Intensity of msgs to be displayed. Presently, this parameter takes 
+                  three values: 0, 1 or more. If 0, no messages are displayed. The default is 0.
         
         random_state: int; Controls the shuffling applied to the data before applying the 
                       train_test_split. Pass an int for reproducible output across multiple 
@@ -185,7 +185,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         self.avg = True  # Ignored if n_iter = 1
         self.saveGraph = saveGraph  # Should graph objects be saved for later plotting
         self.cutoff = cutoff
-        self.verbose = verbose  # Presently unused
+        self.verbose = verbose  # permissible values are 0,1, 2..
         self.random_state = random_state
         self.mergelevelsincols = mergelevelsincols
         self.mergethreshold = mergethreshold
@@ -193,12 +193,15 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         self.replaceby = replaceby
         self.avoidInteractionFeatures = avoidInteractionFeatures
         self.multigraph = multigraph
+        self.cat_cols = []
+        self.interactingCatCols = []
+        self.dataCols = []
 
 
     
             
     
-    def fit(self, X, cat_cols , interactingCatCols = None, y=None):
+    def fit(self, X, y=None, **kwargs):
         """
         Called by: None
         Calls: _checkMissing(), _checkParamsIntegrity(), _interactionCols()
@@ -209,13 +212,17 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         X : pandas DataFrame; X is a dataframe having only cat_cols
         cat_cols : list; Categorical columns to be considered
                    Categorical column names MUST ONLY have
-                   a-zA-Z characters; no underscore etc
+                   a-zA-Z characters; no underscore etc. Pass
+                   it as an element of kwargs.
         interactingCatCols : list; Cat columns that will interact
                              to make new columns. Interaction
                              of two cat columns, x and y would
                              produce a new cat column x_p_y
                              with corrresponding levels of both 
-                             concatenated row-by-row.
+                             concatenated row-by-row. Pass it as an
+                             element of kwargs.
+        dataCols: list; If X is 2D numpy array, must pass columns 
+                  names of data. Pass it as an element of kwargs                   
         y : numpy array or pandas Series. Target feature. 
             Needed to get stratified sample when 
             sampsize < 1. Ignored when n_iter = 1
@@ -225,9 +232,16 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         Class object
 
         """
+        for key, value in kwargs.items():
+            if key == 'cat_cols':
+                self.cat_cols = kwargs[key]
+            if key == 'interactingCatCols' :
+                self.interactingCatCols = kwargs[key]
+            if key == 'dataCols':
+                self.dataCols = kwargs[key]
+
+        
         self.interaction = True
-        self.cat_cols = cat_cols
-        self.interactingCatCols = interactingCatCols
         
         # modelList_ would contain dictioaries that map
         # each cat column's levels to some network
@@ -239,11 +253,25 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             
                     
         if not isinstance(X, pd.DataFrame):
-            raise ValueError("Pass a pandas.DataFrame")  
-            
+            if not isinstance(X, np.ndarray):
+                raise ValueError("X should either be a pandas DataFrame or a 2D numpy array")  
+        
+        if isinstance(X, np.ndarray):
+            if self.dataCols is None:
+                raise ValueError("dataCols must contain list of column names")
+
+            if not isinstance(self.dataCols, list):
+                raise ValueError("Pass dataCols as a list of column names") 
+                
+            if (len(self.dataCols) != X.shape[1]):
+                raise ValueError("Mismatch in number of cols in dataCols and shape of X") 
+            # Transform numpy array to pandas dataframe    
+            X = pd.DataFrame(X, columns = self.dataCols)    
+                
+        
+        
         if not isinstance(self.cat_cols, list):
-            raise ValueError(
-                "Pass cat_cols as a list of column names")    
+            raise ValueError("Pass cat_cols as a list of column names")    
 
 
         if not isinstance(self.interactingCatCols, list):
@@ -314,8 +342,8 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                 X1 = self._getSample(X, y)
             
             for k,j in enumerate(fulllist_):
-                print("Record set no is {}  ".format(k+1))
-                print("Set of records is: ", j)
+                if (self.verbose > 1 ) : print("Record set no is {}  ".format(k+1))
+                if (self.verbose > 1) : print("Set of records is: ", j)
                 # Each outer loop creates a new sets of models
                 self._getStoreFeatures(X1, j )
                 gc.collect()
@@ -360,12 +388,12 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         if (len(self.interactingCatCols) > 0):
             a = [ i for i in self.interactingCatCols if i not in self.cat_cols]
             if len(a) > 0:
-                raise Exception("interactingCatCols can not have any col not included in cat_col.")
+                raise Exception("interactingCatCols can not have any col not included in cat_col as also can not be a list of list.")
                 
         
         assert self.noOfColsToConcat == 2,"In this ver noOfColsToConcat can only be 2"
         assert self.sampsize < 1, "sampsize be < 1. Ignored when n_iter is 1"
-        assert self.verbose > 0, "verbose should minimum 1"
+        assert self.verbose >= 0, "verbose should minimum 0"
         if (self.saveGraph) or (self.n_iter > 1):
             assert self.modelsPath is not None, "modelsPath can not be None when n_iter > 1 as maps are saved to folder."
         u = sum(self.cMeasures[:4]) + sum(self.cMeasures[5:])
@@ -442,8 +470,15 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         if not hasattr(self, 'encoding_'):
             raise AttributeError("catEncoder must be fitted")
             
+            
         if not isinstance(X, pd.DataFrame):
-            raise ValueError("Pass a pandas DataFrame")    
+            if not isinstance(X, np.ndarray):
+                raise ValueError("X should either be a pandas DataFrame or a 2D numpy array")  
+        
+        if isinstance(X, np.ndarray):
+            # Transform numpy array to pandas dataframe    
+            X = pd.DataFrame(X, columns = self.dataCols)     
+            
         
         ncols = X.shape[1]
                
@@ -712,9 +747,9 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                 #cMeasures = i[2]       # A relic from past code. We ignore this
                 start1 = time.time()
                 # Write to console and to progress.csv
-                print("\n")
-                print("\nNext: ", j+1 , " of ", len(record_sets), colToProject, intermediaryCol )
-                print("========================")
+                if (self.verbose > 1 ) : print("\n")
+                if (self.verbose) : print("\nNext: ", j+1 , " of ", len(record_sets), colToProject, intermediaryCol )
+                if (self.verbose > 1 ) : print("========================")
                 # This helps track down the point of crash if program crashes
                 c1 = train[colToProject].nunique()
                 c2 = train[intermediaryCol].nunique()
@@ -726,11 +761,11 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                 time_taken = (end1-start1)/60
                 #print("train columns: ", len(train.columns))
                 # Write more information on colcole and to file progress.csv                    
-                print("Done with", colToProject," and ", intermediaryCol)
+                if (self.verbose > 1 ) : print("Done with", colToProject," and ", intermediaryCol)
                 myfile.write( str(1) + "," +  str(time_taken) + '\n')  # Can be used in an Excel file
                 myfile.flush()
-                print("Time taken: ", time_taken)
-                print("Entry made in file progress.csv")
+                if (self.verbose > 1 ) : print("Time taken: ", time_taken)
+                if (self.verbose > 1 ) : print("Entry made in file progress.csv")
                 gc.collect()
         return        
                 
@@ -763,7 +798,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         Nothing. 
         """
         noOfUniqueValues = train[colToProject].nunique()
-        print("No of unique values in ", colToProject, " are: ", noOfUniqueValues)
+        if (self.verbose > 1 ) : print("No of unique values in ", colToProject, " are: ", noOfUniqueValues)
         model = self._learn(train,colToProject, intermediaryCol)
         #if self.modelsPath is not None:
         # Store models to disk in a separate folder.
@@ -773,7 +808,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         self._storeModel(model)
         if (self.cMeasures[6] == 1):
             self._storeModelComm(model)
-        print("Model saved")
+        if (self.verbose > 1 ): print("Model saved")
         return    
     
     
@@ -1057,7 +1092,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             
         end1 = time.time()
         tt = (end1-start)/60
-        print("Bipartite Network created. Time taken: ", tt, "minutes")
+        if (self.verbose > 1 ) : print("Bipartite Network created. Time taken: ", tt, "minutes")
         # Project bipartite network to unipartite. projection
         # results in connected graph of nodes in colToProject.
         G = self._projectBipartiteGraph(G, colToProject)
@@ -1066,14 +1101,14 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
             self._saveGraphToDisk(G, colToProject, intermediaryCol, bipartite = False)
         end2 = time.time()
         tt1 = (end2-end1)/60
-        print("Bipartite Network projected. Time taken: ", tt1, "minutes" )
+        if (self.verbose > 1 ) : print("Bipartite Network projected. Time taken: ", tt1, "minutes" )
         gc.collect()
     
         # Calculate Centrality mesaures and build model
         model = self._genModel(G, colToProject, intermediaryCol)
         end3 = time.time()
         tt2 = (end3-end2)/60
-        print("Model extracted. Time taken: ", tt2, "minutes" )
+        if(self.verbose > 1 ) : print("Model extracted. Time taken: ", tt2, "minutes" )
     
         # Save time related information in a file
         netfile = Path(self.pathToStoreProgress) / "networkPerformanceData.csv"
@@ -1322,21 +1357,29 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         # Calculate Betweenness centrality
         # Consumes a lot of time.
         if (self.cMeasures[5] == 1):
-            # See: https://networkx.org/documentation/networkx-1.10/reference/generated/networkx.algorithms.centrality.betweenness_centrality.html
-            if self.k is None:
-                print("Calculating betweenness centrality with k = All nodes")
-            else:
-                print(f"Calculating betweenness centrality with k = {self.k} nodes sample")
-                
+            
             # Amedned on 26th Jan, 2024
             # Check noOfnodes
             noOfnodes = len(network) 
-            
-            if self.k >  noOfnodes:
-                self.k = noOfnodes
-    
-            bt = nx.betweenness_centrality(network, k = self.k)
-            print("Betweenness centrality calculated")
+
+            # See: https://networkx.org/documentation/networkx-1.10/reference/generated/networkx.algorithms.centrality.betweenness_centrality.html
+            if self.k is None:
+                m = noOfnodes
+                if (self.verbose > 1 ): print("Calculating betweenness centrality with k = All nodes")
+            else:
+                
+                if self.k > noOfnodes:
+                    m = noOfnodes
+                else:
+                    m = self.k
+
+                if (self.verbose > 1 ) : print(f"Calculating betweenness centrality with k = {m} nodes sample")
+                
+            start = time.time()
+            bt = nx.betweenness_centrality(network, k = m)
+            end = time.time()
+            tt = (end-start)/60
+            if (self.verbose > 1) : print(f"Betweenness centrality calculated. Time taken: {tt} min ")
             model.append(bt)  # model[3]
         else:
             model.append(None) # model[3]
@@ -1348,11 +1391,20 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         if (self.cMeasures[3] == 1):
             if (self.cMeasures[4] is None):
                 # Calculate clustering coefficient
+                start = time.time()
                 node_char = nx.clustering(network)
+                end = time.time()
+                tt = (end-start)/60
+                if (self.verbose) : print(f"Clustering Coeff calculated. Time Taken: {tt} min ")
             else:
                 # Apply pre-specified node_char_func
+                # Clustering coeff is then NOT calculated
                 node_char_func = self.cMeasures[4]
+                start = time.time()
                 node_char = node_char_func(network)
+                end = time.time()
+                tt = (end-start)/60
+                if (self.verbose) : print(f"Specified func obj evaluated. Time Taken: {tt} min")
             model.append(node_char)  # model[4]
         else:
             model.append(None)      # model[4]
@@ -1523,12 +1575,12 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         # Read all stored models from 'modelsPath'
         print("\n")
         if (self.n_iter > 1) :
-            print(f"====Reading all model-dicts from folder: {self.modelsPath}")
+            if (self.verbose) : print(f"====Reading all model-dicts from folder: {self.modelsPath}")
         else:
-            print("====Reading all model-dicts from RAM")
-        print("") if (self.verbose >0) else print("\n====Takes time...\n")
+            if (self.verbose > 1 ) : print("====Reading all model-dicts from RAM")
+        print("") if (self.verbose == 0) else print("\n====Takes time...\n")
         models = self._readAllStoredModels()
-        if (self.verbose > 0):
+        if (self.verbose > 1 ):
             print("\n====All saved model-dicts read! Model files are intact!")
             print("====Total model-dict are: ", len(models))
             print(f"====Sending model loading progress to file: {filename}")
@@ -1649,9 +1701,9 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
                
         """
         gc.collect()
-        print(f"Current mem usage is: {data.memory_usage().sum()/1000000} MB")  # 9404.2MB/11163MB
+        if (self.verbose > 1) : print(f"Current mem usage is: {data.memory_usage().sum()/1000000} MB")  # 9404.2MB/11163MB
         data.iloc[:,fromIndex:] = data.iloc[:,fromIndex:].astype('float32')
-        print(f"Mem usage after dtype transformation is: {data.memory_usage().sum()/1000000} MB")  # 4734.6MB
+        if (self.verbose > 1) : print(f"Mem usage after dtype transformation is: {data.memory_usage().sum()/1000000} MB")  # 4734.6MB
         return data    
     
     
@@ -1904,7 +1956,7 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
     def vectorsToTSV(self,X, take_mean = False, saveVectorsToDisk = True, filepath = None, impute = False, fnamesuffix = None):
         """
         Calls: _getCatVectors()
-        Called by: main() when needed
+        Called by: main() when needed OR by extractPC0sUnitvectors()
         
         Desc
         ----
@@ -2099,10 +2151,10 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
 
         
     
-    def pcaAndConcat(vec_train, vec_test, n_components = 2, scaleData = True):
+    def pcaAndConcat(self, vec_train, vec_test, n_components=2, scaleData = True):
         """
         Calls:
-        Called by: main method as needed    
+        Called by: main method as needed or by extractPC0sUnitvectors()   
        
        
         Desc
@@ -2200,22 +2252,26 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         print("Done......")
         return cc_tr,cc_te,  vt ,ve, pca_models
     
-    
-    
-    def extractPC0sUnitvectors(self,train_trans,test_trans,n_components):
+        
+    def extractPC0sUnitvectors(self,X_train_trans_imputed,X_test_trans_imputed,  n_comp=2):
         """
+        Calls: vectorsToTSV() and pcaAndConcat()
+        Called by: main method    
+        
         Parameters
         ----------
-        train_trans : pandas DataFrame. Transformed DataFrame of train data 
-                      with transformed cols and also original columns (same 
-                      as in cat_cols). It should also contain target column
-                      with name as 'target'.
-        test_trans:   pandas DataFrame. Transformed DataFrame of test data 
-                      with transformed cols and also original columns (same 
-                      as in cat_cols). It should also contain target column
+        X_train_trans_imputed : pandas DataFrame; Transformed DataFrame of train data 
+                                with transformed cols and also original columns (same 
+                                as in cat_cols). It should also contain target column
+                                with name as 'target'.
+        X_test_trans_imputed:   pandas DataFrame; Transformed DataFrame of test data 
+                                with transformed cols and also original columns (same 
+                                as in cat_cols). It should also contain target column
                    
-        n_components: int, No of PCA components to reduce each DataFrame to.
+        n_comp: int; No of PCA components to reduce each DataFrame to.
                       Default is 2.
+                      
+                      
 
         Returns
         -------
@@ -2223,11 +2279,24 @@ class CatEncodersFamily(BaseEstimator, TransformerMixin):
         only contain Ist pricipal component of each unitvector.
 
         """
-        cc_tr,cc_te, _ , _ = self._pcaAndConcat(train_trans, test_trans, n_components = 2)
+        vec_te,_  = self.vectorsToTSV(X_test_trans_imputed,
+                                      take_mean = False,
+                                      filepath = None ,
+                                      impute = False,
+                                      saveVectorsToDisk = False
+                                      )
+        
+        vec_tr,_ = self.vectorsToTSV(X_train_trans_imputed,
+                                    take_mean = False,
+                                    filepath = None,   # Folder where csv files will be saved
+                                    saveVectorsToDisk = False
+                                    )
+        
+        cc_tr,cc_te, _ , _, pca_models = self.pcaAndConcat(vec_tr, vec_te, n_components = n_comp)
         
         #  Columns containing only Ist PCs:
         cols = [i for i in cc_tr.columns if '0' in i]
-        return cc_tr[cols],cc_te[cols]
+        return cc_tr[cols],cc_te[cols],pca_models
     
     
     
