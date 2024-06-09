@@ -1,6 +1,6 @@
 # CatEncodersFamily
 
-We use network centrality measures such as degree, eigenvector centrality, pagerank and others to transform categorical features of a tabular data to numerical values. 
+We use network centrality measures such as degree, eigenvector centrality, pagerank and others to transform categorical features of a tabular data to numerical values. This is a totally new way of transformation of categorical features to numerical features.
 
 
 Install as:
