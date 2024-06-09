@@ -1,5 +1,8 @@
 # CatEncodersFamily
 
+We use network centrality measures such as degree, eigenvector centrality, pagerank and others to transform categorical features of a tabular data to numerical values. 
+
+
 Install as:
 
 <code>pip install catencfamily</code>
